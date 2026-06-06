@@ -1,97 +1,48 @@
 import { useState } from 'react';
 
-// Evaluat la runtime: localhost → proxy Express local, orice alt host → Vercel Edge Function
 const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const PROXY_URL = isDev ? 'http://localhost:3001/api/claude' : '/api/claude';
+const API_URL = isDev ? 'http://localhost:3001/api/claude' : '/api/claude';
 
 export function useAI() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const getApiKey = () => {
-    try {
-      return JSON.parse(localStorage.getItem('dg_apiKey')) || '';
-    } catch { return ''; }
+    try { return JSON.parse(localStorage.getItem('dg_apiKey')) || ''; }
+    catch { return ''; }
   };
 
-  const callAI = async (prompt, onChunk) => {
+  const callAI = async (prompt) => {
     setLoading(true);
     setError(null);
-    const apiKey = getApiKey();
 
+    const apiKey = getApiKey();
     if (!apiKey) {
-      setError('Cheia API lipsește. Mergi la Setări pentru a o adăuga.');
+      setError('Cheia API lipsește. Mergi la Setări.');
       setLoading(false);
       return null;
     }
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000);
-
-      const response = await fetch(PROXY_URL, {
-        signal: controller.signal,
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
         },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-5',
-          max_tokens: 500,
-          messages: [{ role: 'user', content: prompt }],
-          stream: !!onChunk,
-        }),
+        body: JSON.stringify({ prompt }),
       });
 
-      clearTimeout(timeoutId);
+      const data = await response.json();
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        const msg = errData?.error?.message || `Eroare API ${response.status}`;
-        const type = errData?.error?.type ? ` [${errData.error.type}]` : '';
-        const status = errData?.error?.status ? ` (HTTP ${errData.error.status})` : ` (HTTP ${response.status})`;
-        throw new Error(`${msg}${type}${status}`);
+        throw new Error(data?.error || `Eroare HTTP ${response.status}`);
       }
 
-      if (onChunk) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullText = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
-          for (const line of lines) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.type === 'content_block_delta' && data.delta?.text) {
-                fullText += data.delta.text;
-                onChunk(data.delta.text, fullText);
-              }
-            } catch {}
-          }
-        }
-        setLoading(false);
-        return fullText;
-      } else {
-        const data = await response.json();
-        setLoading(false);
-        // Proxy Node.js returnează { content: text }, Edge returna { content: [{ text }] }
-        return typeof data.content === 'string' ? data.content : data.content?.[0]?.text || '';
-      }
+      setLoading(false);
+      return data.content;
     } catch (err) {
-      const isTimeout = err.name === 'AbortError';
-      const isConnectionRefused = err.message.includes('Failed to fetch') || err.message.includes('ECONNREFUSED') || err.message.includes('NetworkError');
-      setError(
-        isTimeout
-          ? 'Cererea a durat prea mult (>25s). Încearcă din nou — serverul AI poate fi ocupat.'
-          : isConnectionRefused && isDev
-            ? 'Proxy-ul local nu rulează. Pornește serverul cu: npm run server'
-            : err.message
-      );
+      setError(err.message);
       setLoading(false);
       return null;
     }
@@ -104,7 +55,7 @@ export function useAI() {
       const match = text.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
       return match ? JSON.parse(match[0]) : null;
     } catch {
-      setError('Eroare la procesarea răspunsului AI.');
+      setError('Răspunsul AI nu e JSON valid.');
       return null;
     }
   };
