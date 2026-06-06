@@ -34,6 +34,9 @@ export default async function handler(req) {
     return json({ error: { message: `JSON parse error: ${e.message}` } }, 400);
   }
 
+  // Limităm max_tokens pentru a evita timeout pe Edge (limită 30s)
+  if (body.max_tokens && body.max_tokens > 500) body.max_tokens = 500;
+
   let upstream;
   try {
     upstream = await fetch('https://api.anthropic.com/v1/messages', {

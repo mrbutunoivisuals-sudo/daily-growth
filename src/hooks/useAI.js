@@ -26,7 +26,11 @@ export function useAI() {
     }
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+
       const response = await fetch(PROXY_URL, {
+        signal: controller.signal,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -34,11 +38,13 @@ export function useAI() {
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-5',
-          max_tokens: 2000,
+          max_tokens: 500,
           messages: [{ role: 'user', content: prompt }],
           stream: !!onChunk,
         }),
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
@@ -76,11 +82,14 @@ export function useAI() {
         return data.content[0]?.text || '';
       }
     } catch (err) {
+      const isTimeout = err.name === 'AbortError';
       const isConnectionRefused = err.message.includes('Failed to fetch') || err.message.includes('ECONNREFUSED') || err.message.includes('NetworkError');
       setError(
-        isConnectionRefused && isDev
-          ? 'Proxy-ul local nu rulează. Pornește serverul cu: npm run server'
-          : err.message
+        isTimeout
+          ? 'Cererea a durat prea mult (>25s). Încearcă din nou — serverul AI poate fi ocupat.'
+          : isConnectionRefused && isDev
+            ? 'Proxy-ul local nu rulează. Pornește serverul cu: npm run server'
+            : err.message
       );
       setLoading(false);
       return null;
