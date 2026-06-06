@@ -80,7 +80,7 @@ export default function Settings() {
           <div className="flex items-center gap-3 p-3 rounded-xl bg-indigo-500/8 border border-indigo-500/15">
             <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm font-bold">C</div>
             <div>
-              <p className="text-sm font-medium text-slate-200">claude-sonnet-4-20250514</p>
+              <p className="text-sm font-medium text-slate-200">claude-sonnet-4-5</p>
               <p className="text-xs text-slate-500">Cel mai performant model pentru educație personalizată</p>
             </div>
           </div>
