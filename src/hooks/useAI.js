@@ -1,9 +1,8 @@
 import { useState } from 'react';
 
-// În development folosim proxy-ul Express local; în producție (Vercel) apelăm direct /api/claude
-const PROXY_URL = import.meta.env.DEV
-  ? 'http://localhost:3001/api/claude'
-  : '/api/claude';
+// Evaluat la runtime: localhost → proxy Express local, orice alt host → Vercel Edge Function
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const PROXY_URL = isDev ? 'http://localhost:3001/api/claude' : '/api/claude';
 
 export function useAI() {
   const [loading, setLoading] = useState(false);
