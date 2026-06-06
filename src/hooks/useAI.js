@@ -33,7 +33,9 @@ export function useAI() {
         body: JSON.stringify({ prompt }),
       });
 
-      const data = await response.json();
+      const rawText = await response.text();
+      console.log('RAW RESPONSE:', rawText);
+      const data = JSON.parse(rawText);
 
       if (!response.ok) {
         throw new Error(data?.error || `Eroare HTTP ${response.status}`);
