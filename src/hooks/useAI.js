@@ -79,7 +79,8 @@ export function useAI() {
       } else {
         const data = await response.json();
         setLoading(false);
-        return data.content[0]?.text || '';
+        // Proxy Node.js returnează { content: text }, Edge returna { content: [{ text }] }
+        return typeof data.content === 'string' ? data.content : data.content?.[0]?.text || '';
       }
     } catch (err) {
       const isTimeout = err.name === 'AbortError';
