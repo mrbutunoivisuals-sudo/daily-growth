@@ -42,7 +42,10 @@ export function useAI() {
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData?.error?.message || `Eroare API: ${response.status}`);
+        const msg = errData?.error?.message || `Eroare API ${response.status}`;
+        const type = errData?.error?.type ? ` [${errData.error.type}]` : '';
+        const status = errData?.error?.status ? ` (HTTP ${errData.error.status})` : ` (HTTP ${response.status})`;
+        throw new Error(`${msg}${type}${status}`);
       }
 
       if (onChunk) {
@@ -73,9 +76,9 @@ export function useAI() {
         return data.content[0]?.text || '';
       }
     } catch (err) {
-      const isConnectionRefused = err.message.includes('fetch') || err.message.includes('Failed to fetch') || err.message.includes('ECONNREFUSED');
+      const isConnectionRefused = err.message.includes('Failed to fetch') || err.message.includes('ECONNREFUSED') || err.message.includes('NetworkError');
       setError(
-        isConnectionRefused
+        isConnectionRefused && isDev
           ? 'Proxy-ul local nu rulează. Pornește serverul cu: npm run server'
           : err.message
       );

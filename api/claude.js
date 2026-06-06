@@ -6,35 +6,32 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, x-api-key',
 };
 
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+  });
+}
+
 export default async function handler(req) {
-  // Preflight CORS — browserul trimite OPTIONS înainte de POST cross-origin
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS });
   }
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: { message: 'Method not allowed' } }), {
-      status: 405,
-      headers: { ...CORS, 'Content-Type': 'application/json' },
-    });
+    return json({ error: { message: 'Method not allowed' } }, 405);
   }
 
   const apiKey = req.headers.get('x-api-key');
   if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: { message: 'Lipsește cheia API (x-api-key header).' } }),
-      { status: 401, headers: { ...CORS, 'Content-Type': 'application/json' } }
-    );
+    return json({ error: { message: 'Lipsește cheia API (x-api-key header).' } }, 401);
   }
 
   let body;
   try {
     body = await req.json();
-  } catch {
-    return new Response(
-      JSON.stringify({ error: { message: 'Request body invalid (JSON parse error).' } }),
-      { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } }
-    );
+  } catch (e) {
+    return json({ error: { message: `JSON parse error: ${e.message}` } }, 400);
   }
 
   let upstream;
@@ -49,15 +46,30 @@ export default async function handler(req) {
       body: JSON.stringify(body),
     });
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: { message: `Nu pot contacta Anthropic API: ${err.message}` } }),
-      { status: 502, headers: { ...CORS, 'Content-Type': 'application/json' } }
-    );
+    return json({ error: { message: `Network error reaching Anthropic: ${err.message}` } }, 502);
+  }
+
+  // Dacă Anthropic returnează eroare, retransmite răspunsul complet ca JSON
+  if (!upstream.ok) {
+    let errBody;
+    try {
+      errBody = await upstream.json();
+    } catch {
+      errBody = { error: { message: `Anthropic HTTP ${upstream.status}` } };
+    }
+    return json({
+      error: {
+        message: errBody?.error?.message || `Anthropic error ${upstream.status}`,
+        type: errBody?.error?.type || 'api_error',
+        status: upstream.status,
+        raw: errBody,
+      },
+    }, upstream.status);
   }
 
   if (body.stream) {
     return new Response(upstream.body, {
-      status: upstream.status,
+      status: 200,
       headers: {
         ...CORS,
         'Content-Type': 'text/event-stream',
@@ -67,8 +79,5 @@ export default async function handler(req) {
   }
 
   const data = await upstream.json();
-  return new Response(JSON.stringify(data), {
-    status: upstream.status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
+  return json(data, 200);
 }
