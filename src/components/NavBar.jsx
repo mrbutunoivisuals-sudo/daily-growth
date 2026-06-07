@@ -1,14 +1,15 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Home, MessageCircle, Target, Zap, BarChart2, CheckSquare, MoreHorizontal } from 'lucide-react';
+import { Home, MessageCircle, Target, Zap, BarChart2, CheckSquare, Flame, CalendarCheck } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
 import { motion } from 'framer-motion';
 
 const NAV = [
   { to: '/dashboard',   icon: Home,          label: 'Acasă' },
   { to: '/coach',       icon: MessageCircle, label: 'Coach' },
-  { to: '/goals',       icon: Target,        label: 'Obiective' },
   { to: '/habits',      icon: Zap,           label: 'Obiceiuri' },
+  { to: '/challenges',  icon: Flame,         label: 'Provocări' },
   { to: '/checkin',     icon: CheckSquare,   label: 'Check-in' },
+  { to: '/review',      icon: CalendarCheck, label: 'Review' },
   { to: '/life',        icon: BarChart2,     label: 'Scor' },
 ];
 

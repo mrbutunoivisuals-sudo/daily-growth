@@ -12,6 +12,8 @@ import LifeScore     from './pages/LifeScore.jsx';
 import Session       from './pages/Session.jsx';
 import Domains       from './pages/Domains.jsx';
 import Settings      from './pages/Settings.jsx';
+import Challenges    from './pages/Challenges.jsx';
+import Review        from './pages/Review.jsx';
 
 function RequireProfile({ children }) {
   const { profile } = useApp();
@@ -34,6 +36,8 @@ function AppRoutes() {
         <Route path="/session/:domainId" element={<RequireProfile><Session /></RequireProfile>} />
         <Route path="/domains"    element={<RequireProfile><Domains /></RequireProfile>} />
         <Route path="/settings"   element={<RequireProfile><Settings /></RequireProfile>} />
+        <Route path="/challenges" element={<RequireProfile><Challenges /></RequireProfile>} />
+        <Route path="/review"     element={<RequireProfile><Review /></RequireProfile>} />
         <Route path="/" element={<Navigate to="/onboarding" replace />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
