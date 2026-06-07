@@ -59,10 +59,15 @@ export function useAI() {
     const text = await callAI(prompt);
     if (!text) return null;
     try {
-      const match = text.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
-      return match ? JSON.parse(match[0]) : null;
-    } catch {
-      setError('Răspunsul AI nu e JSON valid.');
+      // Elimină markdown code fences: ```json ... ``` sau ``` ... ```
+      const stripped = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
+      console.log('STRIPPED FOR JSON:', stripped.slice(0, 200));
+      // Extrage primul array sau obiect JSON
+      const match = stripped.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+      if (!match) throw new Error(`Niciun JSON găsit în: ${stripped.slice(0, 200)}`);
+      return JSON.parse(match[0]);
+    } catch (err) {
+      setError(`JSON parse eșuat: ${err.message}`);
       return null;
     }
   };
