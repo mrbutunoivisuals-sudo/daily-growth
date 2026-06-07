@@ -11,7 +11,8 @@ app.post('/api/claude', async (req, res) => {
   const apiKey = req.headers['x-api-key'];
   if (!apiKey) return res.status(401).json({ error: 'Lipsește cheia API.' });
 
-  const { prompt } = req.body;
+  const { prompt, fast } = req.body;
+  const model = fast ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
   if (!prompt) return res.status(400).json({ error: 'Lipsește promptul.' });
 
   try {
@@ -23,8 +24,8 @@ app.post('/api/claude', async (req, res) => {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 2000,
+        model,
+        max_tokens: 1500,
         messages: [{ role: 'user', content: prompt }],
       }),
     });

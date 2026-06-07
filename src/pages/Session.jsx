@@ -40,7 +40,7 @@ export default function Session() {
 
   const generateSession = async () => {
     const prompt = buildSessionPrompt(domainId, learningStyle, sessions.length + 1, prevConcepts);
-    const data = await callAIJSON(prompt);
+    const data = await callAIJSON(prompt, { fast: true });
     if (data) setSessionData(data);
   };
 

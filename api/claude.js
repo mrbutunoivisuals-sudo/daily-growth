@@ -1,3 +1,9 @@
+export const config = { runtime: 'nodejs', maxDuration: 30 };
+
+// Modele: Haiku pentru sesiuni (rapid), Sonnet pentru insights (calitate)
+const MODEL_FAST = 'claude-haiku-4-5';
+const MODEL_SMART = 'claude-sonnet-4-5';
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -8,8 +14,10 @@ export default async function handler(req, res) {
   const apiKey = req.headers['x-api-key'];
   if (!apiKey) return res.status(401).json({ error: 'Lipsește cheia API.' });
 
-  const { prompt } = req.body || {};
+  const { prompt, fast } = req.body || {};
   if (!prompt) return res.status(400).json({ error: 'Lipsește promptul.' });
+
+  const model = fast ? MODEL_FAST : MODEL_SMART;
 
   let upstream;
   try {
@@ -21,8 +29,8 @@ export default async function handler(req, res) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 2000,
+        model,
+        max_tokens: 1500,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
