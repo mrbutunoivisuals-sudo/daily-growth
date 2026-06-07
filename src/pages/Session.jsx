@@ -39,6 +39,14 @@ export default function Session() {
   }, []);
 
   const generateSession = async () => {
+    // Reset all session state before fetching so the loading screen shows
+    // and old quiz data doesn't bleed into the new session.
+    setSessionData(null);
+    setStep(0);
+    setQuizAnswers({});
+    setAiExplanations({});
+    setCompleted(false);
+
     const prompt = buildSessionPrompt(domainId, learningStyle, sessions.length + 1, prevConcepts);
     const data = await callAIJSON(prompt, { fast: true });
     if (data) setSessionData(data);
@@ -126,8 +134,9 @@ export default function Session() {
             <button onClick={() => navigate('/dashboard')} className="flex-1 py-3 glass rounded-2xl text-slate-300 hover:text-slate-100 transition-colors">
               Dashboard
             </button>
-            <button onClick={generateSession} className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-semibold transition-colors">
-              Altă sesiune
+            <button onClick={generateSession} disabled={loading}
+              className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-2xl font-semibold transition-colors flex items-center justify-center gap-2">
+              {loading ? <><Loader size={14} className="animate-spin" /> Se generează...</> : 'Altă sesiune'}
             </button>
           </div>
         </motion.div>
