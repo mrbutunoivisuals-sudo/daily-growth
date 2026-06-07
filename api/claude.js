@@ -8,28 +8,45 @@ export default async function handler(req, res) {
   const apiKey = req.headers['x-api-key'];
   if (!apiKey) return res.status(401).json({ error: 'Lipsește cheia API.' });
 
-  const { prompt } = req.body;
+  const { prompt } = req.body || {};
   if (!prompt) return res.status(400).json({ error: 'Lipsește promptul.' });
 
-  const upstream = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 500,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
-
-  const data = await upstream.json();
-
-  if (!upstream.ok) {
-    return res.status(upstream.status).json({ error: data?.error?.message || `Eroare ${upstream.status}` });
+  let upstream;
+  try {
+    upstream = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 500,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+  } catch (err) {
+    return res.status(502).json({ error: `Fetch failed: ${err.message}` });
   }
 
-  return res.status(200).json({ content: data.content[0].text });
+  let data;
+  try {
+    data = await upstream.json();
+  } catch (err) {
+    return res.status(502).json({ error: `JSON parse failed: ${err.message}` });
+  }
+
+  if (!upstream.ok) {
+    return res.status(upstream.status).json({
+      error: data?.error?.message || `Anthropic error ${upstream.status}`,
+    });
+  }
+
+  const text = data?.content?.[0]?.text;
+  if (!text) {
+    return res.status(502).json({ error: `No text in response: ${JSON.stringify(data)}` });
+  }
+
+  return res.status(200).json({ content: text });
 }

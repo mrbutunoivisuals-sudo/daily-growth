@@ -35,7 +35,12 @@ export function useAI() {
 
       const rawText = await response.text();
       console.log('RAW RESPONSE:', rawText);
-      const data = JSON.parse(rawText);
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(`JSON invalid. Brut: ${rawText.slice(0, 300)}`);
+      }
 
       if (!response.ok) {
         throw new Error(data?.error || `Eroare HTTP ${response.status}`);
