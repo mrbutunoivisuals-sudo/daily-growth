@@ -1,253 +1,214 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Zap, Download, Settings, BookOpen, ChevronRight, RefreshCw, Flame } from 'lucide-react';
-import RadarChart from '../components/RadarChart.jsx';
-import HeatMap from '../components/HeatMap.jsx';
-import InsightCard from '../components/InsightCard.jsx';
+import { ArrowRight, Flame, Zap, Target, MessageCircle, CheckSquare, Sun, Moon, BarChart2, Download, Settings } from 'lucide-react';
+import { useApp } from '../context/AppContext.jsx';
 import { useAI } from '../hooks/useAI.js';
-import { exportAllData } from '../hooks/useStorage.js';
-import { DOMAINS, LEARNING_STYLES } from '../utils/questions.js';
-import { getDomainName, getDomainColor, getDomainIcon, getScoreLabel } from '../utils/scoring.js';
 import { buildInsightPrompt } from '../utils/aiPrompts.js';
 
-function getGreeting() {
+function greeting(name) {
   const h = new Date().getHours();
-  if (h < 12) return 'Bună dimineața';
-  if (h < 18) return 'Bună ziua';
-  return 'Bună seara';
+  if (h < 5)  return `Noapte bună, ${name}`;
+  if (h < 12) return `Bună dimineața, ${name}`;
+  if (h < 18) return `Bună ziua, ${name}`;
+  return `Bună seara, ${name}`;
+}
+
+function ScoreRing({ value, color, size = 56 }) {
+  const r = (size - 6) / 2;
+  const circ = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={5} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={5}
+        strokeDasharray={circ} strokeDashoffset={circ - (value / 100) * circ}
+        strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s ease' }} />
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central"
+        style={{ transform: 'rotate(90deg)', transformOrigin: '50% 50%', fontSize: 12, fill: '#e2e8f0', fontWeight: 600 }}>
+        {value}
+      </text>
+    </svg>
+  );
 }
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { profile, habits, goals, streak, morningDone, eveningDone, habitsCompletedToday, lifeScore, exportData, touchStreak } = useApp();
   const { callAIJSON, loading: aiLoading } = useAI();
-  const [profile, setProfile] = useState(null);
-  const [sessions, setSessions] = useState([]);
-  const [streak, setStreak] = useState({ current: 0 });
-  const [insights, setInsights] = useState([]);
-  const [identityMsg, setIdentityMsg] = useState('');
+  const [insight, setInsight] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('dg_daily_insight')); } catch { return null; }
+  });
 
-  useEffect(() => {
-    try {
-      const p = JSON.parse(localStorage.getItem('dg_userProfile'));
-      const s = JSON.parse(localStorage.getItem('dg_sessions') || '[]');
-      const st = JSON.parse(localStorage.getItem('dg_streak') || '{"current":0}');
-      if (!p) { navigate('/'); return; }
-      setProfile(p);
-      setSessions(s);
-      setStreak(st);
+  useEffect(() => { if (profile) touchStreak(); }, []);
 
-      const today = new Date().toDateString();
-      const yesterday = new Date(Date.now() - 86400000).toDateString();
-      const newStreak = { ...st };
-      if (st.lastActive !== today) {
-        if (st.lastActive === yesterday) {
-          newStreak.current = (st.current || 0) + 1;
-        } else if (!st.lastActive) {
-          newStreak.current = 1;
-        }
-        newStreak.lastActive = today;
-        localStorage.setItem('dg_streak', JSON.stringify(newStreak));
-        setStreak(newStreak);
-      }
-
-      const cachedInsights = sessionStorage.getItem('dg_insights');
-      if (cachedInsights) {
-        setInsights(JSON.parse(cachedInsights));
-      }
-    } catch { navigate('/'); }
-  }, []);
-
-  const loadInsights = async () => {
-    if (!profile) return;
-    const prompt = buildInsightPrompt({ ...profile, sessions });
-    const data = await callAIJSON(prompt);
-    if (data && Array.isArray(data)) {
-      setInsights(data);
-      sessionStorage.setItem('dg_insights', JSON.stringify(data));
+  const loadInsight = async () => {
+    const result = await callAIJSON(buildInsightPrompt(profile));
+    if (result) {
+      setInsight(Array.isArray(result) ? result[0] : result);
+      sessionStorage.setItem('dg_daily_insight', JSON.stringify(Array.isArray(result) ? result[0] : result));
     }
   };
 
+  useEffect(() => { if (profile && !insight) loadInsight(); }, [profile]);
+
   const handleExport = () => {
-    const data = exportAllData();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `daily-growth-backup-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const blob = new Blob([JSON.stringify(exportData(), null, 2)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `daily-growth-${new Date().toISOString().split('T')[0]}.json`; a.click();
   };
 
-  if (!profile) return null;
+  if (!profile) { navigate('/onboarding'); return null; }
 
-  const scores = profile.assessmentScores || {};
-  const weakDomains = profile.weakDomains || [];
-  const todayDomain = weakDomains[0];
-  const style = LEARNING_STYLES[profile.learningStyle?.dominant];
-  const prevSession = sessions[sessions.length - 1];
+  const todayGoal = goals.find(g => g.horizon === 'today' && g.status !== 'done');
+  const todayDate = new Date().toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' });
+  const habitsTotal = habits.length;
 
-  const todayStr = new Date().toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' });
+  const QUICK = [
+    { to: '/checkin',  icon: morningDone ? Moon : Sun,  label: morningDone ? 'Check-in seară' : 'Check-in dimineață', color: morningDone ? '#8b5cf6' : '#f59e0b', done: morningDone && eveningDone },
+    { to: '/coach',    icon: MessageCircle,              label: 'Vorbește cu Coach',    color: '#6366f1' },
+    { to: '/goals',    icon: Target,                     label: 'Obiectivele mele',     color: '#10b981' },
+    { to: '/habits',   icon: Zap,                        label: 'Obiceiurile mele',     color: '#f97316' },
+  ];
+
+  const SCORES = [
+    { label: 'Obiceiuri',   value: lifeScore.habits,    color: '#6366f1' },
+    { label: 'Obiective',   value: lifeScore.goals,     color: '#10b981' },
+    { label: 'Check-ins',   value: lifeScore.checkins,  color: '#f59e0b' },
+    { label: 'Provocări',   value: lifeScore.challenges,color: '#ec4899' },
+    { label: 'Mentalitate', value: lifeScore.mindset,   color: '#8b5cf6' },
+    { label: 'Sănătate',    value: lifeScore.health,    color: '#06b6d4' },
+  ];
 
   return (
-    <div className="min-h-screen px-4 py-8">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen md:pl-16 pb-24 md:pb-0">
+      <div className="max-w-2xl mx-auto px-4 py-8">
+
         {/* Header */}
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-start justify-between mb-8">
+        <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} className="flex items-start justify-between mb-8">
           <div>
-            <p className="text-slate-500 text-sm mb-1">{todayStr}</p>
-            <h1 className="text-3xl font-bold text-slate-100">
-              {getGreeting()}, <span className="text-gradient">{profile.name}</span> 👋
-            </h1>
+            <p className="text-slate-500 text-sm capitalize">{todayDate}</p>
+            <h1 className="text-2xl font-bold text-slate-100 mt-0.5">{greeting(profile.name)}</h1>
             {streak.current > 1 && (
-              <div className="flex items-center gap-1.5 mt-2">
-                <Flame size={16} className="text-orange-400" />
-                <span className="text-sm text-orange-400 font-medium">{streak.current} zile consecutive</span>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <Flame size={14} className="text-orange-400" />
+                <span className="text-sm text-orange-400 font-medium">{streak.current} zile consecutiv</span>
               </div>
             )}
           </div>
           <div className="flex gap-2">
-            <button onClick={handleExport} title="Export date" className="w-10 h-10 glass rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors">
-              <Download size={18} />
-            </button>
-            <Link to="/settings" className="w-10 h-10 glass rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors">
-              <Settings size={18} />
-            </Link>
+            <button onClick={handleExport} className="w-9 h-9 glass rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-300 transition-colors"><Download size={15} /></button>
+            <Link to="/settings" className="w-9 h-9 glass rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-300 transition-colors"><Settings size={15} /></Link>
           </div>
         </motion.div>
 
-        {/* Today's Session CTA */}
-        {todayDomain && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-            className="glass rounded-3xl p-6 mb-6 border border-indigo-500/20 relative overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/5 to-purple-500/5" />
-            <div className="relative flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <Zap size={16} className="text-indigo-400" />
-                  <span className="text-indigo-400 text-sm font-medium">Sesiunea de azi</span>
-                </div>
-                <h3 className="text-xl font-bold text-slate-100 mb-1">
-                  {getDomainIcon(todayDomain)} {getDomainName(todayDomain)}
-                </h3>
-                <p className="text-slate-400 text-sm">
-                  Scor actual: <span className="text-slate-300">{scores[todayDomain]}%</span> · {getScoreLabel(scores[todayDomain])}
-                </p>
+        {/* Life Score Hero */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+          className="glass rounded-3xl p-6 mb-5 relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5" />
+          <div className="relative flex items-center gap-6">
+            <div className="text-center">
+              <div className="text-4xl font-bold text-gradient">{lifeScore.overall}</div>
+              <div className="text-xs text-slate-500 mt-1">Life Score</div>
+            </div>
+            <div className="flex-1">
+              <div className="flex flex-wrap gap-3">
+                {SCORES.map(s => (
+                  <div key={s.label} className="flex flex-col items-center gap-1">
+                    <ScoreRing value={s.value} color={s.color} size={48} />
+                    <span className="text-[10px] text-slate-500">{s.label}</span>
+                  </div>
+                ))}
               </div>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => navigate(`/session/${todayDomain}`)}
-                className="flex items-center gap-2 px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-semibold transition-colors glow"
-              >
-                Începe <ChevronRight size={18} />
-              </motion.button>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Today's Focus */}
+        {todayGoal ? (
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+            className="glass rounded-2xl p-5 mb-5 border border-indigo-500/20">
+            <div className="flex items-center gap-2 mb-1">
+              <Target size={14} className="text-indigo-400" />
+              <span className="text-xs text-indigo-400 font-medium uppercase tracking-wide">Focusul de azi</span>
+            </div>
+            <p className="text-slate-100 font-semibold">{todayGoal.title}</p>
+            <button onClick={() => navigate('/goals')} className="text-xs text-slate-500 hover:text-indigo-400 mt-2 transition-colors flex items-center gap-1">
+              Marchează ca făcut <ArrowRight size={12} />
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+            className="glass rounded-2xl p-5 mb-5 border border-dashed border-white/10">
+            <p className="text-slate-500 text-sm">Niciun obiectiv pentru azi.</p>
+            <Link to="/goals" className="text-xs text-indigo-400 hover:text-indigo-300 mt-1 flex items-center gap-1 transition-colors">
+              Adaugă un obiectiv <ArrowRight size={12} />
+            </Link>
+          </motion.div>
+        )}
+
+        {/* Habits today */}
+        {habitsTotal > 0 && (
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+            className="glass rounded-2xl p-5 mb-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Zap size={14} className="text-orange-400" />
+                <span className="text-sm font-medium text-slate-300">Obiceiuri azi</span>
+              </div>
+              <Link to="/habits" className="text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                Vezi toate →
+              </Link>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+                <motion.div className="h-full bg-orange-400 rounded-full"
+                  animate={{ width: `${(habitsCompletedToday / habitsTotal) * 100}%` }}
+                  transition={{ duration: 0.8, delay: 0.4 }} />
+              </div>
+              <span className="text-sm font-semibold text-slate-300">{habitsCompletedToday}/{habitsTotal}</span>
             </div>
           </motion.div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Radar Chart */}
-          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className="glass rounded-3xl p-6">
-            <h3 className="font-semibold text-slate-200 mb-4">Harta vieții tale</h3>
-            <RadarChart scores={scores} previousScores={prevSession?.scores} size={280} />
-            {prevSession && <p className="text-xs text-slate-500 text-center mt-2">— Acum  ···· Sesiunea anterioară</p>}
-          </motion.div>
-
-          {/* Right column */}
-          <div className="space-y-4">
-            {/* Domain scores */}
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="glass rounded-3xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-slate-200">Scoruri domenii</h3>
-                <Link to="/domains" className="text-indigo-400 text-sm hover:text-indigo-300 flex items-center gap-1">
-                  Vezi toate <ChevronRight size={14} />
-                </Link>
+        {/* AI Insight */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+          className="glass rounded-2xl p-5 mb-5 min-h-[80px] flex items-center">
+          {aiLoading ? (
+            <div className="flex items-center gap-3 w-full">
+              <div className="w-6 h-6 border-2 border-indigo-500/40 border-t-indigo-400 rounded-full animate-spin flex-shrink-0" />
+              <p className="text-slate-500 text-sm">Coach-ul generează insight-ul tău...</p>
+            </div>
+          ) : insight ? (
+            <div className="flex items-start gap-3 w-full">
+              <span className="text-xl flex-shrink-0">✨</span>
+              <div>
+                <p className="text-xs text-indigo-400 font-medium mb-1">{insight.title || 'Insight zilnic'}</p>
+                <p className="text-slate-300 text-sm leading-relaxed">{insight.text || insight}</p>
               </div>
-              <div className="space-y-3">
-                {DOMAINS.map(d => (
-                  <div key={d.id} className="flex items-center gap-3">
-                    <span className="text-base w-6 text-center">{d.icon}</span>
-                    <div className="flex-1">
-                      <div className="flex justify-between mb-1">
-                        <span className="text-xs text-slate-400">{d.name}</span>
-                        <span className="text-xs text-slate-500">{scores[d.id] || 0}%</span>
-                      </div>
-                      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${scores[d.id] || 0}%` }}
-                          transition={{ delay: 0.5, duration: 0.8 }}
-                          className="h-full rounded-full"
-                          style={{ background: d.color }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-
-            {/* Learning style */}
-            {style && (
-              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }} className="glass rounded-2xl p-4 flex items-center gap-4">
-                <div className="text-3xl">{style.icon}</div>
-                <div>
-                  <p className="text-xs text-slate-500 mb-0.5">Stilul tău de învățare</p>
-                  <p className="font-semibold text-slate-200">{style.name}</p>
-                  <p className="text-xs text-slate-500 leading-tight mt-0.5">{style.description.split('.')[0]}.</p>
-                </div>
-              </motion.div>
-            )}
-          </div>
-        </div>
-
-        {/* Heatmap */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="glass rounded-3xl p-6 mb-6">
-          <h3 className="font-semibold text-slate-200 mb-4">Activitate — ultimele 35 de zile</h3>
-          <HeatMap sessions={sessions} />
-          <p className="text-xs text-slate-600 mt-3">{sessions.length} sesiuni totale</p>
-        </motion.div>
-
-        {/* AI Insights */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }} className="glass rounded-3xl p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-slate-200">✨ Insights personalizate</h3>
-            <button
-              onClick={loadInsights}
-              disabled={aiLoading}
-              className="flex items-center gap-2 px-4 py-2 text-sm text-indigo-400 hover:text-indigo-300 glass rounded-xl transition-all disabled:opacity-50"
-            >
-              <RefreshCw size={14} className={aiLoading ? 'animate-spin' : ''} />
-              {aiLoading ? 'Generez...' : insights.length ? 'Regenerează' : 'Generează'}
-            </button>
-          </div>
-          {insights.length > 0 ? (
-            <div className="space-y-3">
-              {insights.map((ins, i) => <InsightCard key={i} insight={ins} index={i} />)}
+              <button onClick={loadInsight} className="ml-auto text-slate-600 hover:text-slate-400 text-xs flex-shrink-0 transition-colors">↻</button>
             </div>
           ) : (
-            <div className="text-center py-8">
-              <p className="text-slate-500 text-sm">Apasă „Generează" pentru insights AI personalizate bazate pe profilul tău.</p>
-              <p className="text-slate-600 text-xs mt-1">Necesită cheie Anthropic API (Setări)</p>
-            </div>
+            <button onClick={loadInsight} className="flex items-center gap-2 text-sm text-slate-500 hover:text-indigo-400 transition-colors w-full">
+              <span>✨</span> Generează insight AI pentru azi
+            </button>
           )}
         </motion.div>
 
-        {/* Quick nav */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }} className="grid grid-cols-2 gap-4">
-          <Link to="/domains" className="glass rounded-2xl p-5 hover:border-indigo-500/30 transition-all group">
-            <BookOpen size={22} className="text-indigo-400 mb-3 group-hover:scale-110 transition-transform" />
-            <h4 className="font-semibold text-slate-200 text-sm">Domenii & Curriculum</h4>
-            <p className="text-slate-500 text-xs mt-1">Explorează și adaugă domenii noi</p>
-          </Link>
-          <Link to="/settings" className="glass rounded-2xl p-5 hover:border-indigo-500/30 transition-all group">
-            <Settings size={22} className="text-slate-400 mb-3 group-hover:scale-110 transition-transform" />
-            <h4 className="font-semibold text-slate-200 text-sm">Setări</h4>
-            <p className="text-slate-500 text-xs mt-1">Cheie API și preferințe</p>
-          </Link>
+        {/* Quick actions */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+          className="grid grid-cols-2 gap-3">
+          {QUICK.map(({ to, icon: Icon, label, color, done }, i) => (
+            <Link key={to} to={to}>
+              <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}
+                className={`glass rounded-2xl p-4 transition-all hover:border-white/15 ${done ? 'opacity-50' : ''}`}>
+                <Icon size={20} style={{ color }} className="mb-3" />
+                <p className="text-sm font-medium text-slate-200 leading-snug">{label}</p>
+                {done && <p className="text-xs text-slate-500 mt-1">Completat ✓</p>}
+              </motion.div>
+            </Link>
+          ))}
         </motion.div>
+
       </div>
     </div>
   );
