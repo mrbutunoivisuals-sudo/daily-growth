@@ -95,7 +95,7 @@ export default function Coach() {
   }
 
   return (
-    <div className="page" style={{ display: 'flex', flexDirection: 'column', height: '100dvh' }}>
+    <div className="page-coach">
       {/* Header */}
       <div style={{
         padding: '20px 20px 12px', borderBottom: '1px solid var(--border)',
@@ -160,10 +160,11 @@ export default function Coach() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
+      {/* Input — sits at bottom of flex container which already clears the nav */}
       <div style={{
-        padding: '12px 16px 20px', borderTop: '1px solid var(--border)', flexShrink: 0,
+        padding: '12px 16px 16px', borderTop: '1px solid var(--border)', flexShrink: 0,
         display: 'flex', gap: 10, alignItems: 'flex-end',
+        background: 'rgba(255,255,255,0.97)',
       }}>
         <textarea
           ref={el => { textareaRef.current = el; inputRef.current = el }}

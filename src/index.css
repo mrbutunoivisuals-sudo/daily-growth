@@ -106,17 +106,26 @@ textarea.input { resize: vertical; min-height: 80px; }
 .quiz-opt:disabled { cursor: default; }
 
 /* ── Navigation ────────────────────────────────────────────────────────────── */
+
+/* Single source of truth for nav height — used everywhere that needs clearance */
+:root {
+  --nav-bar-h: 64px;
+  --nav-clearance: calc(var(--nav-bar-h) + env(safe-area-inset-bottom));
+}
+
 .nav-bottom {
-  position: fixed; bottom: 0; left: 0; right: 0; height: 64px;
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: calc(var(--nav-bar-h) + env(safe-area-inset-bottom));
   background: rgba(255,255,255,0.93); backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-top: 1px solid rgba(0,0,0,0.07);
-  display: flex; align-items: center; justify-content: space-around;
-  padding-bottom: env(safe-area-inset-bottom); z-index: 100;
+  display: flex; align-items: flex-start; justify-content: space-around;
+  padding-top: 0; padding-bottom: env(safe-area-inset-bottom); z-index: 100;
 }
 .nav-desktop { display: none; }
 
 @media (min-width: 768px) {
+  :root { --nav-clearance: 0px; } /* desktop sidebar doesn't overlap content vertically */
   .nav-bottom  { display: none; }
   .nav-desktop {
     display: flex !important;
@@ -132,7 +141,17 @@ textarea.input { resize: vertical; min-height: 80px; }
 
 /* ── Page layout ───────────────────────────────────────────────────────────── */
 .page       { min-height: 100dvh; background: var(--bg); }
-.page-inner { max-width: 520px; margin: 0 auto; padding: 36px 20px 100px; }
+/* bottom padding = nav height + safe area + comfortable breathing room */
+.page-inner { max-width: 520px; margin: 0 auto; padding: 36px 20px calc(var(--nav-clearance) + 24px); }
+
+/* Coach page is a full-height flex column — it manages its own bottom clearance */
+.page-coach {
+  display: flex; flex-direction: column;
+  height: 100dvh;
+  /* Shrink so the flex container ends at the TOP of the fixed nav bar */
+  height: calc(100dvh - var(--nav-clearance));
+  background: var(--bg);
+}
 
 /* ── Typography ────────────────────────────────────────────────────────────── */
 .label-sm { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-3); }
