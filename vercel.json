@@ -6,6 +6,12 @@
       "maxDuration": 30
     }
   },
+  "build": {
+    "env": {
+      "VITE_SUPABASE_URL": "https://vyewyyhgbqlwigmfnefk.supabase.co",
+      "VITE_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ5ZXd5eWhnYnFsd2lnbWZuZWZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MDQyOTQsImV4cCI6MjA5NjQ4MDI5NH0.HaoS3c9QlFWLE8N-3unzZDVkRDEgkhWZIMGA_g7t5wM"
+    }
+  },
   "rewrites": [
     { "source": "/api/claude", "destination": "/api/claude" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }

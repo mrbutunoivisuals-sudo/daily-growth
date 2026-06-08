@@ -44,7 +44,7 @@ const STARTERS = [
 ];
 
 export default function Coach() {
-  const { profile, coach, setCoach, weekHistory } = useApp();
+  const { profile, coach, appendCoachMsg, clearCoach, weekHistory } = useApp();
   const { callAI, loading } = useAI();
   const [input, setInput] = useState('');
   const bottomRef = useRef(null);
@@ -59,16 +59,16 @@ export default function Coach() {
     setInput('');
 
     const userMsg = { role: 'user', content: msg, timestamp: new Date().toISOString() };
-    setCoach(prev => [...prev, userMsg]);
+    appendCoachMsg(userMsg);
 
     const prompt = buildCoachPrompt(profile, weekHistory, msg, coach);
     const response = await callAI(prompt, { fast: false, max_tokens: 600 });
     if (response) {
-      setCoach(prev => [...prev, {
+      appendCoachMsg({
         role: 'assistant', content: response,
         timestamp: new Date().toISOString(),
         isNew: true,
-      }]);
+      });
     }
   };
 
@@ -98,7 +98,7 @@ export default function Coach() {
           </div>
           {coach.length > 0 && (
             <button
-              onClick={() => setCoach([])}
+              onClick={() => clearCoach()}
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
                 color: '#AEAEB2', fontSize: 13, padding: '8px 0', marginTop: 4,

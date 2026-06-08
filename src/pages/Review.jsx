@@ -32,7 +32,7 @@ Scorul e de la 1 la 10. Fii direct, nu laudă fals. Răspunde DOAR cu JSON valid
 }
 
 export default function Review() {
-  const { profile, checkins, reviews, setReviews, apiKey } = useApp();
+  const { profile, checkins, reviews, upsertReview, apiKey } = useApp();
   const { callAIJSON, loading } = useAI();
   const [expanded, setExpanded] = useState(null);
 
@@ -65,7 +65,7 @@ export default function Review() {
       scoreReason: data.scoreReason || '',
       nextFocus:   data.nextFocus   || '',
     };
-    setReviews(prev => [...prev.filter(r => r.weekOf !== weekOf), review]);
+    upsertReview(review);
     setExpanded(review.id);
   };
 

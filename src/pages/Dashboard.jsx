@@ -462,7 +462,7 @@ function CompletedCard({ checkin }) {
    DASHBOARD
 ══════════════════════════════════════════════════════ */
 export default function Dashboard() {
-  const { profile, todayCheckin, upsertTodayCheckin, streak, apiKey, weekHistory } = useApp();
+  const { profile, todayCheckin, upsertTodayCheckin, streak, apiKey, weekHistory, todayTasks, setTodayTasks } = useApp();
   // Separate useAI instances — independent loading states
   const { callAI, loading: loadingIntent }    = useAI();
   const { callAIJSON, loading: loadingTasks } = useAI();
@@ -476,16 +476,9 @@ export default function Dashboard() {
   const [learned,  setLearned]  = useState(todayCheckin?.evening?.learned  || '');
   const [tomorrow, setTomorrow] = useState(todayCheckin?.evening?.tomorrow || '');
 
-  // ── Daily tasks state ──
-  const [tasks, setTasksRaw] = useState(() => loadTasks() || []);
-
-  const setTasks = useCallback((updater) => {
-    setTasksRaw(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      saveTasks(next);
-      return next;
-    });
-  }, []);
+  // ── Daily tasks — from context (synced to Supabase) ──
+  const tasks = todayTasks;
+  const setTasks = setTodayTasks;
 
   // Sync form fields if checkin already exists
   useEffect(() => {
@@ -498,11 +491,10 @@ export default function Dashboard() {
 
   // Auto-generate tasks on load if morning exists and no tasks yet
   useEffect(() => {
-    const saved = loadTasks();
-    if (!saved && todayCheckin?.morning && profile) {
+    if (tasks.length === 0 && todayCheckin?.morning && profile) {
       generateTasks(todayCheckin.morning.business, todayCheckin.morning.balance);
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Generate tasks ── */
   const generateTasks = async (biz, bal) => {
