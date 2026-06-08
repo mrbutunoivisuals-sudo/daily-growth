@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion'
 import { useApp, todayStr } from '../context/AppContext.jsx'
@@ -742,10 +742,14 @@ export default function Today() {
 
   const hours = new Date().getHours()
   const [uiStep, setUiStep] = useState(() => deriveInitialStep(todaySession, hours))
+  const [genError, setGenError] = useState('')
+  const lastMorningData = useRef(null)
 
   // ── Morning submit → generate session ────────────────────────────────────
   const handleMorning = useCallback(async (morningData) => {
-    updateTodaySession(morningData)
+    lastMorningData.current = morningData
+    setGenError('')
+    updateTodaySession(morningData)   // save check-in immediately
     setUiStep('generating')
 
     try {
@@ -764,13 +768,15 @@ export default function Today() {
         })
         setUiStep('lesson')
       } else {
-        // Fallback: go back to morning so user can retry
-        updateTodaySession({ ...morningData, morning_mood: '' })
-        setUiStep('morning')
+        // Bad/null response — stay on generating screen but show error + retry
+        setGenError('Răspunsul AI nu a putut fi procesat. Încearcă din nou.')
+        setUiStep('gen_error')
       }
-    } catch {
-      updateTodaySession({ ...morningData, morning_mood: '' })
-      setUiStep('morning')
+    } catch (err) {
+      setGenError(err?.message?.includes('API') || err?.message?.includes('key')
+        ? 'Cheie API invalidă sau lipsă. Verifică în Setări.'
+        : 'Eroare de conexiune. Verifică internetul și încearcă din nou.')
+      setUiStep('gen_error')
     }
   }, [profile, recentSessions, updateTodaySession, callAIJSON])
 
@@ -847,6 +853,34 @@ export default function Today() {
           {uiStep === 'generating' && (
             <motion.div key="generating" {...stepVariants}>
               <GeneratingScreen />
+            </motion.div>
+          )}
+
+          {uiStep === 'gen_error' && (
+            <motion.div key="gen_error" {...stepVariants} style={{ textAlign: 'center', padding: '48px 0' }}>
+              <div style={{ fontSize: 44, marginBottom: 16 }}>⚠️</div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', marginBottom: 10 }}>
+                Nu am putut genera lecția
+              </h3>
+              <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.6, marginBottom: 28, maxWidth: 300, margin: '0 auto 28px' }}>
+                {genError}
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <motion.button
+                  className="btn btn-primary btn-full"
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => {
+                    if (lastMorningData.current) handleMorning(lastMorningData.current)
+                  }}
+                >
+                  ↺ Încearcă din nou
+                </motion.button>
+                <Link to="/settings" style={{ textDecoration: 'none' }}>
+                  <motion.button className="btn btn-secondary btn-full" whileTap={{ scale: 0.97 }}>
+                    ⚙️ Verifică cheia API
+                  </motion.button>
+                </Link>
+              </div>
             </motion.div>
           )}
 

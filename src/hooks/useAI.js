@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
-const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const API_URL = isDev ? 'http://localhost:3001/api/claude' : '/api/claude';
+// Always use /api/claude — Vite proxies it to :3001 in dev, Vercel handles it in prod
+const API_URL = '/api/claude';
 
 export function useAI() {
   const [loading, setLoading] = useState(false);
