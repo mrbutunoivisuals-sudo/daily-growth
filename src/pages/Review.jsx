@@ -77,29 +77,32 @@ export default function Review() {
       <div style={{ maxWidth: 560, margin: '0 auto', padding: '32px 20px 100px' }} className="md:pl-24">
 
         {/* Header */}
-        <div style={{ marginBottom: 28 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#1D1D1F' }}>Review</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6E6E73' }}>
-            Săptămâna aceasta: {weekCheckins.length} {weekCheckins.length === 1 ? 'zi' : 'zile'} înregistrate
+        <div className="fade-up" style={{ marginBottom: 32 }}>
+          <h1 style={{
+            margin: '0 0 5px', fontSize: 32, fontWeight: 700,
+            letterSpacing: '-0.5px', color: '#1D1D1F', lineHeight: 1.1,
+          }}>Review</h1>
+          <p style={{ margin: 0, fontSize: 14, color: '#0071E3', fontWeight: 500 }}>
+            Săptămâna aceasta · {weekCheckins.length} {weekCheckins.length === 1 ? 'zi înregistrată' : 'zile înregistrate'}
           </p>
         </div>
 
         {/* Generate card */}
         {!apiKey ? (
-          <div style={{
-            background: '#FFF3CD', border: '1px solid #FFD60A',
-            borderRadius: 12, padding: '14px 18px', marginBottom: 20,
+          <div className="fade-up-1" style={{
+            background: '#FFFBEB', border: '1px solid rgba(245,158,11,0.3)',
+            borderRadius: 14, padding: '14px 18px', marginBottom: 20,
           }}>
-            <p style={{ margin: 0, fontSize: 13, color: '#856404', lineHeight: 1.5 }}>
+            <p style={{ margin: 0, fontSize: 14, color: '#92400E', lineHeight: 1.5 }}>
               Configurează un API Key în Setări pentru a genera review-uri AI.
             </p>
           </div>
         ) : (
-          <div className="card" style={{ padding: 24, marginBottom: 20 }}>
-            <h2 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: '#1D1D1F' }}>
+          <div className="card fade-up-1" style={{ padding: 24, marginBottom: 20 }}>
+            <h2 style={{ margin: '0 0 7px', fontSize: 17, fontWeight: 600, color: '#1D1D1F' }}>
               Review săptămâna aceasta
             </h2>
-            <p style={{ margin: '0 0 18px', fontSize: 13, color: '#6E6E73', lineHeight: 1.5 }}>
+            <p style={{ margin: '0 0 20px', fontSize: 14, color: '#6E6E73', lineHeight: 1.55 }}>
               {weekCheckins.length === 0
                 ? 'Nu ai date înregistrate săptămâna aceasta. Review-ul va fi bazat pe profilul tău.'
                 : `Bazat pe ${weekCheckins.length} ${weekCheckins.length === 1 ? 'zi înregistrată' : 'zile înregistrate'}.`}
@@ -118,18 +121,19 @@ export default function Review() {
         )}
 
         {/* Reviews list */}
-        {sorted.map(r => (
-          <ReviewCard
-            key={r.id}
-            review={r}
-            isExpanded={expanded === r.id}
-            onToggle={() => setExpanded(expanded === r.id ? null : r.id)}
-          />
+        {sorted.map((r, i) => (
+          <div key={r.id} style={{ animation: `fadeUp 0.4s ease ${0.1 + i * 0.08}s both` }}>
+            <ReviewCard
+              review={r}
+              isExpanded={expanded === r.id}
+              onToggle={() => setExpanded(expanded === r.id ? null : r.id)}
+            />
+          </div>
         ))}
 
         {sorted.length === 0 && !loading && (
-          <div style={{ textAlign: 'center', paddingTop: 40 }}>
-            <p style={{ color: '#AEAEB2', fontSize: 14 }}>Primul tău review apare după ce îl generezi.</p>
+          <div className="fade-up-2" style={{ textAlign: 'center', paddingTop: 48 }}>
+            <p style={{ color: '#AEAEB2', fontSize: 15 }}>Primul tău review apare după ce îl generezi.</p>
           </div>
         )}
       </div>
@@ -142,73 +146,67 @@ function ReviewCard({ review, isExpanded, onToggle }) {
 
   return (
     <div className="card" style={{ marginBottom: 12, overflow: 'hidden' }}>
-      {/* Header row — always visible */}
-      <button
-        onClick={onToggle}
-        style={{
-          width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-          padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          textAlign: 'left',
-        }}
-      >
-        <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#1D1D1F', lineHeight: 1.3 }}>
+      {/* Header — always visible */}
+      <button onClick={onToggle} style={{
+        width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+        padding: '20px 22px', display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', textAlign: 'left', gap: 16,
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#1D1D1F', lineHeight: 1.35 }}>
             {review.title || 'Review'}
           </p>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: '#AEAEB2' }}>
             {new Date(review.weekOf).toLocaleDateString('ro-RO', { day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 20, fontWeight: 700, color: scoreColor }}>{review.score}</span>
-          <span style={{ fontSize: 18, color: '#C7C7CC' }}>{isExpanded ? '↑' : '↓'}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+          <div style={{ textAlign: 'right' }}>
+            <span style={{ fontSize: 22, fontWeight: 700, color: scoreColor, display: 'block', lineHeight: 1 }}>
+              {review.score}
+            </span>
+            <span style={{ fontSize: 10, color: '#C7C7CC' }}>/ 10</span>
+          </div>
+          <span style={{ fontSize: 16, color: '#C7C7CC', transition: 'transform 0.2s ease', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none' }}>▾</span>
         </div>
       </button>
 
       {/* Expanded content */}
       {isExpanded && (
-        <div className="fade-up" style={{ padding: '0 20px 20px', borderTop: '1px solid #F2F2F7' }}>
+        <div style={{ padding: '0 22px 22px', borderTop: '1px solid #F2F2F7' }}>
 
-          {/* Wins */}
           {review.wins?.length > 0 && (
-            <Section icon="✓" label="Realizări" color="#34C759">
+            <Section label="Realizări" color="#34C759">
               {review.wins.map((w, i) => (
-                <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 8, alignItems: 'flex-start' }}>
-                  <span style={{ color: '#34C759', fontSize: 13, flexShrink: 0, marginTop: 1 }}>•</span>
-                  <p style={{ margin: 0, fontSize: 14, color: '#1D1D1F', lineHeight: 1.5 }}>{w}</p>
+                <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 9, alignItems: 'flex-start' }}>
+                  <span style={{ color: '#34C759', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>✓</span>
+                  <p style={{ margin: 0, fontSize: 15, color: '#1D1D1F', lineHeight: 1.55 }}>{w}</p>
                 </div>
               ))}
             </Section>
           )}
 
-          {/* Lesson */}
           {review.lesson && (
-            <Section icon="→" label="Lecția săptămânii" color="#0071E3">
-              <p style={{ margin: 0, fontSize: 14, color: '#1D1D1F', lineHeight: 1.6 }}>{review.lesson}</p>
+            <Section label="Lecția săptămânii" color="#0071E3">
+              <p style={{ margin: 0, fontSize: 15, color: '#1D1D1F', lineHeight: 1.65 }}>{review.lesson}</p>
             </Section>
           )}
 
-          {/* Score */}
-          <Section icon={null} label="Scor mental" color="#6E6E73">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-              <span style={{ fontSize: 24, fontWeight: 700, color: scoreColor }}>{review.score}</span>
-              <span style={{ fontSize: 14, color: '#6E6E73' }}>/ 10</span>
-            </div>
-            {review.scoreReason && (
-              <p style={{ margin: 0, fontSize: 13, color: '#6E6E73', lineHeight: 1.5 }}>{review.scoreReason}</p>
-            )}
-          </Section>
+          {review.scoreReason && (
+            <Section label="Scor mental" color="#6E6E73">
+              <p style={{ margin: 0, fontSize: 14, color: '#6E6E73', lineHeight: 1.55 }}>{review.scoreReason}</p>
+            </Section>
+          )}
 
-          {/* Next focus */}
           {review.nextFocus && (
             <div style={{
-              background: '#F0F7FF', borderRadius: 12, padding: '14px 16px',
-              borderLeft: '3px solid #0071E3', marginTop: 4,
+              marginTop: 16, background: '#F0F7FF', borderRadius: 14, padding: '16px 18px',
+              borderLeft: '3px solid #0071E3',
             }}>
-              <p style={{ margin: '0 0 4px', fontSize: 11, fontWeight: 600, color: '#0071E3', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 700, color: '#0071E3', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Focus săptămâna viitoare
               </p>
-              <p style={{ margin: 0, fontSize: 14, color: '#1D1D1F', lineHeight: 1.5 }}>{review.nextFocus}</p>
+              <p style={{ margin: 0, fontSize: 15, color: '#1D1D1F', lineHeight: 1.55 }}>{review.nextFocus}</p>
             </div>
           )}
         </div>
