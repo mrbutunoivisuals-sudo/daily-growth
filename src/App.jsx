@@ -1,17 +1,17 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AppProvider, useApp } from './context/AppContext.jsx';
-import ErrorBoundary from './components/ErrorBoundary.jsx';
-import NavBar    from './components/NavBar.jsx';
-import Onboarding from './pages/Onboarding.jsx';
-import Dashboard  from './pages/Dashboard.jsx';
-import Coach      from './pages/Coach.jsx';
-import Review     from './pages/Review.jsx';
-import Settings   from './pages/Settings.jsx';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { AppProvider, useApp } from './context/AppContext.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
+import NavBar from './components/NavBar.jsx'
+import Onboarding from './pages/Onboarding.jsx'
+import Today from './pages/Today.jsx'
+import Coach from './pages/Coach.jsx'
+import Review from './pages/Review.jsx'
+import Settings from './pages/Settings.jsx'
 
 function RequireProfile({ children }) {
-  const { profile } = useApp();
-  if (!profile?.onboardingDone) return <Navigate to="/onboarding" replace />;
-  return children;
+  const { profile } = useApp()
+  if (!profile?.onboardingDone) return <Navigate to="/onboarding" replace />
+  return children
 }
 
 function AppRoutes() {
@@ -20,15 +20,15 @@ function AppRoutes() {
       <NavBar />
       <Routes>
         <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="/dashboard"  element={<RequireProfile><Dashboard /></RequireProfile>} />
+        <Route path="/today"      element={<RequireProfile><Today /></RequireProfile>} />
         <Route path="/coach"      element={<RequireProfile><Coach /></RequireProfile>} />
         <Route path="/review"     element={<RequireProfile><Review /></RequireProfile>} />
         <Route path="/settings"   element={<RequireProfile><Settings /></RequireProfile>} />
-        <Route path="/"           element={<Navigate to="/onboarding" replace />} />
-        <Route path="*"           element={<Navigate to="/dashboard" replace />} />
+        <Route path="/"           element={<Navigate to="/today" replace />} />
+        <Route path="*"           element={<Navigate to="/today" replace />} />
       </Routes>
     </>
-  );
+  )
 }
 
 export default function App() {
@@ -37,12 +37,12 @@ export default function App() {
       <AppProvider>
         <BrowserRouter>
           <ErrorBoundary>
-            <div style={{ minHeight: '100vh', background: '#F5F5F7' }}>
+            <div style={{ minHeight: '100dvh', background: 'var(--bg)' }}>
               <AppRoutes />
             </div>
           </ErrorBoundary>
         </BrowserRouter>
       </AppProvider>
     </ErrorBoundary>
-  );
+  )
 }

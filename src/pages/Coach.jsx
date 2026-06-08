@@ -1,276 +1,200 @@
-import { useState, useRef, useEffect } from 'react';
-import { useApp } from '../context/AppContext.jsx';
-import { useAI } from '../hooks/useAI.js';
+import { useState, useRef, useEffect } from 'react'
+import { useApp } from '../context/AppContext.jsx'
+import { useAI } from '../hooks/useAI.js'
+import { motion, AnimatePresence } from 'framer-motion'
 
-function buildCoachPrompt(profile, weekHistory, userMessage, history) {
-  const weekSummary = weekHistory.length === 0
-    ? 'Nu există date din această săptămână.'
-    : weekHistory.map(c => {
-        const d = new Date(c.date).toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric' });
-        const parts = [];
-        if (c.morning?.business) parts.push(`intenție: "${c.morning.business}"`);
-        if (c.evening?.done)     parts.push(`realizat: "${c.evening.done}"`);
-        if (c.evening?.learned)  parts.push(`învățat: "${c.evening.learned}"`);
-        return `${d}: ${parts.join(' | ')}`;
-      }).join('\n');
+const SendIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="22" y1="2" x2="11" y2="13"/>
+    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+  </svg>
+)
+const TrashIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
+    <path d="M9 6V4h6v2"/>
+  </svg>
+)
 
-  const conversationHistory = history.slice(-10).map(m =>
-    `${m.role === 'user' ? 'Utilizator' : 'Coach'}: ${m.content}`
-  ).join('\n');
+function buildCoachSystem(profile, recentSessions) {
+  const name = profile?.name || 'utilizatorul'
+  const focus = profile?.focus || ''
+  const identity = (profile?.identity || []).join(', ')
 
-  return `Ești un coach de creștere personală bazat pe filozofia Jim Rohn.
-Profilul utilizatorului: nume=${profile?.name}, identitate=[${profile?.identity?.join(', ')}], focus=${profile?.focus}.
-Istoricul acestei săptămâni:
-${weekSummary}
-${conversationHistory ? `\nConversație anterioară:\n${conversationHistory}` : ''}
-Principii de urmat:
-- Disciplină > motivație
-- Identitate > comportament
-- Răspunde, nu reacționa
-- Pune întrebări care duc la propria înțelegere
-- Nu da discursuri. Nu fi pozitiv fals. Fii direct și practic.
-- Răspunsul are maxim 4 paragrafe scurte
-- Ultimul paragraf e întotdeauna o întrebare de reflecție
-Răspunde în română.
+  const ctx = recentSessions.slice(0, 5).map(s => {
+    const parts = []
+    if (s.lesson_title) parts.push(`Lecție: "${s.lesson_title}"`)
+    if (s.quiz_score != null) parts.push(`Quiz: ${s.quiz_score}%`)
+    if (s.task_title) parts.push(`Task: "${s.task_title}"`)
+    if (s.evening_applied) parts.push(`Aplicat: ${s.evening_applied}`)
+    return `[${s.date}] ${parts.join(' | ')}`
+  }).join('\n')
 
-Utilizator: ${userMessage}`;
+  return `Ești un coach personal pentru ${name}, care lucrează la creștere în domeniul: ${focus}.
+Identitate vizată: ${identity || 'nedefinită'}.
+
+Context lecții recente (ultimele 5 zile):
+${ctx || 'Nicio sesiune anterioară'}
+
+Comportament:
+- Vorbești în română, concis, direct, cald dar ferm
+- Răspunsuri scurte (2-4 propoziții dacă nu se cere altfel)
+- Conectezi răspunsurile la lecțiile și taskurile recente când e relevant
+- Nu ești terapeut — ești un coach orientat spre acțiune
+- Dacă cineva e descurajat, dai perspectivă + un pas mic concret
+- Folosești prenumele rar (nu în fiecare mesaj)`
 }
-
-const STARTERS = [
-  'De ce nu reușesc să fiu consistent?',
-  'Cum știu dacă sunt pe drumul cel bun?',
-  'Ce înseamnă disciplina în practică?',
-  'Cum îmi reconstruiesc un obicei pierdut?',
-];
 
 export default function Coach() {
-  const { profile, coach, appendCoachMsg, clearCoach, weekHistory } = useApp();
-  const { callAI, loading } = useAI();
-  const [input, setInput] = useState('');
-  const bottomRef = useRef(null);
+  const { profile, coach, appendCoachMsg, clearCoach, recentSessions, apiKey } = useApp()
+  const { callAI } = useAI()
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const bottomRef = useRef(null)
+  const inputRef = useRef(null)
+  const textareaRef = useRef(null)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [coach]);
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [coach, loading])
 
-  const send = async (message) => {
-    const msg = (message || input).trim();
-    if (!msg || loading) return;
-    setInput('');
+  const sendMessage = async () => {
+    const text = input.trim()
+    if (!text || loading) return
 
-    const userMsg = { role: 'user', content: msg, timestamp: new Date().toISOString() };
-    appendCoachMsg(userMsg);
-
-    const prompt = buildCoachPrompt(profile, weekHistory, msg, coach);
-    const response = await callAI(prompt, { fast: false, max_tokens: 600 });
-    if (response) {
-      appendCoachMsg({
-        role: 'assistant', content: response,
-        timestamp: new Date().toISOString(),
-        isNew: true,
-      });
+    if (!apiKey) {
+      appendCoachMsg({ role: 'assistant', content: 'Configurează cheia API în Setări pentru a folosi coach-ul.', ts: Date.now() })
+      return
     }
-  };
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-  };
+    const userMsg = { role: 'user', content: text, ts: Date.now() }
+    appendCoachMsg(userMsg)
+    setInput('')
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
+    setLoading(true)
+
+    try {
+      const system = buildCoachSystem(profile, recentSessions)
+      const history = [...coach, userMsg]
+        .slice(-20)
+        .map(m => `${m.role === 'user' ? 'User' : 'Coach'}: ${m.content}`)
+        .join('\n')
+
+      const reply = await callAI(`${system}\n\nConversație:\n${history}\n\nCoach:`, { fast: true, max_tokens: 400 })
+      appendCoachMsg({ role: 'assistant', content: reply.trim(), ts: Date.now() })
+    } catch {
+      appendCoachMsg({ role: 'assistant', content: 'Eroare de conexiune. Verifică cheia API în Setări.', ts: Date.now() })
+    } finally {
+      setLoading(false)
+      inputRef.current?.focus()
+    }
+  }
+
+  const handleKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
+  }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F5F5F7' }}>
-      <div
-        style={{ maxWidth: 600, margin: '0 auto', width: '100%', minHeight: '100vh', paddingLeft: 20, paddingRight: 20 }}
-        className="md:pl-24 md:pr-8"
-      >
-        {/* ── Header ── */}
-        <div className="fade-up" style={{
-          paddingTop: 36, paddingBottom: 20,
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-        }}>
-          <div>
-            <h1 style={{
-              margin: 0, fontSize: 32, fontWeight: 700,
-              letterSpacing: '-0.5px', color: '#1D1D1F', lineHeight: 1.1,
-            }}>Coach</h1>
-            <p style={{ margin: '5px 0 0', fontSize: 14, color: '#0071E3', fontWeight: 500 }}>
-              Filozofia Jim Rohn. Direct și practic.
+    <div className="page" style={{ display: 'flex', flexDirection: 'column', height: '100dvh' }}>
+      {/* Header */}
+      <div style={{
+        padding: '20px 20px 12px', borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+      }}>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: 0 }}>Coach</h1>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '2px 0 0' }}>Știe ce ai învățat și ce ai de lucru</p>
+        </div>
+        {coach.length > 0 && (
+          <motion.button whileTap={{ scale: 0.9 }} onClick={clearCoach}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 8, borderRadius: 10 }}>
+            <TrashIcon />
+          </motion.button>
+        )}
+      </div>
+
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+        {coach.length === 0 && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+            style={{ textAlign: 'center', marginTop: 60 }}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>💬</div>
+            <p style={{ color: 'var(--text-2)', fontSize: 15, lineHeight: 1.6, maxWidth: 280, margin: '0 auto' }}>
+              Întreabă-mă orice legat de lecția de azi, taskul tău, sau orice te blochează.
             </p>
-          </div>
-          {coach.length > 0 && (
-            <button
-              onClick={() => clearCoach()}
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: '#AEAEB2', fontSize: 13, padding: '8px 0', marginTop: 4,
-                transition: 'color 0.15s ease',
-              }}
-              onMouseEnter={e => e.currentTarget.style.color = '#6E6E73'}
-              onMouseLeave={e => e.currentTarget.style.color = '#AEAEB2'}
-            >
-              Șterge istoricul
-            </button>
-          )}
-        </div>
+          </motion.div>
+        )}
 
-        {/* ── Messages area ── */}
-        <div style={{ paddingBottom: 120 }}>
-          {coach.length === 0 ? (
-            <div className="fade-up-1">
-              <p style={{ color: '#6E6E73', fontSize: 16, marginBottom: 20, lineHeight: 1.6 }}>
-                Cu ce mă pot ajuta astăzi, {profile?.name}?
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {STARTERS.map((s, i) => (
-                  <StarterButton key={s} text={s} delay={i * 0.06} onClick={() => send(s)} />
-                ))}
+        <AnimatePresence initial={false}>
+          {coach.map((msg, i) => (
+            <motion.div key={msg.ts || i}
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
+              style={{ marginBottom: 12, display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+              <div style={{
+                maxWidth: '78%', padding: '10px 14px',
+                borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                background: msg.role === 'user' ? 'var(--accent)' : 'var(--card)',
+                color: msg.role === 'user' ? '#fff' : 'var(--text)',
+                fontSize: 14, lineHeight: 1.55,
+                boxShadow: msg.role === 'user' ? 'none' : 'var(--shadow)',
+                border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
+                whiteSpace: 'pre-wrap',
+              }}>
+                {msg.content}
               </div>
-            </div>
-          ) : (
-            <div>
-              {coach.map((m, i) => (
-                <MessageBubble key={i} message={m} isLatest={i === coach.length - 1} />
-              ))}
-              {loading && <TypingIndicator />}
-              <div ref={bottomRef} />
-            </div>
-          )}
-        </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
 
-        {/* ── Fixed input bar ── */}
-        <div style={{
-          position: 'fixed', bottom: 0, left: 0, right: 0,
-          background: 'rgba(245,245,247,0.92)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderTop: '1px solid rgba(0,0,0,0.07)',
-          padding: '12px 20px',
-          paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
-          zIndex: 40,
-        }}>
-          <div
-            style={{ maxWidth: 600, margin: '0 auto', display: 'flex', gap: 10, alignItems: 'flex-end' }}
-            className="md:pl-4"
-          >
-            <textarea
-              className="input-field"
-              rows={1}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Scrie o întrebare sau o situație..."
-              style={{
-                flex: 1, resize: 'none', minHeight: 48, maxHeight: 130,
-                lineHeight: 1.5, padding: '13px 16px', overflow: 'auto',
-                fontSize: 16,
-              }}
-            />
-            <button
-              onClick={() => send()}
-              disabled={!input.trim() || loading}
-              className="btn-primary"
-              style={{ padding: '13px 20px', fontSize: 18, flexShrink: 0, borderRadius: 14 }}
-            >
-              {loading ? (
-                <span style={{ display: 'inline-block', animation: 'pulse 1s ease infinite' }}>···</span>
-              ) : '↑'}
-            </button>
-          </div>
-          <style>{`@keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }`}</style>
-        </div>
+        {loading && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            style={{ display: 'flex', gap: 5, padding: '8px 4px', alignItems: 'center' }}>
+            {[0, 1, 2].map(i => (
+              <motion.div key={i}
+                animate={{ y: [0, -5, 0] }}
+                transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
+                style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)' }} />
+            ))}
+          </motion.div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div style={{
+        padding: '12px 16px 20px', borderTop: '1px solid var(--border)', flexShrink: 0,
+        display: 'flex', gap: 10, alignItems: 'flex-end',
+      }}>
+        <textarea
+          ref={el => { textareaRef.current = el; inputRef.current = el }}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={handleKey}
+          placeholder="Scrie un mesaj..."
+          rows={1}
+          style={{
+            flex: 1, resize: 'none', border: '1.5px solid var(--border)', borderRadius: 16,
+            padding: '10px 14px', fontSize: 14, lineHeight: 1.5, outline: 'none',
+            background: 'var(--card)', color: 'var(--text)', fontFamily: 'inherit',
+            maxHeight: 120, overflowY: 'auto',
+          }}
+          onInput={e => {
+            e.target.style.height = 'auto'
+            e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
+          }}
+        />
+        <motion.button whileTap={{ scale: 0.9 }} onClick={sendMessage}
+          disabled={!input.trim() || loading}
+          style={{
+            width: 42, height: 42, borderRadius: 14, flexShrink: 0,
+            background: input.trim() && !loading ? 'var(--accent)' : 'var(--border)',
+            border: 'none', cursor: input.trim() && !loading ? 'pointer' : 'default',
+            color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'background 0.2s',
+          }}>
+          <SendIcon />
+        </motion.button>
       </div>
     </div>
-  );
-}
-
-/* ── Starter button ── */
-function StarterButton({ text, delay, onClick }) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        background: '#fff',
-        border: `1.5px solid ${hovered ? '#0071E3' : '#E5E5EA'}`,
-        borderRadius: 14, padding: '14px 18px', textAlign: 'left', cursor: 'pointer',
-        fontSize: 15, color: '#1D1D1F', lineHeight: 1.4,
-        boxShadow: hovered ? '0 4px 14px rgba(0,113,227,0.10)' : '0 2px 8px rgba(0,0,0,0.05)',
-        transition: 'all 0.15s ease',
-        animation: `fadeUp 0.4s ease ${delay}s both`,
-      }}
-    >
-      {text}
-    </button>
-  );
-}
-
-/* ── Message bubble ── */
-function MessageBubble({ message, isLatest }) {
-  const isUser = message.role === 'user';
-  // Animate only the latest assistant message
-  const shouldAnimate = !isUser && message.isNew;
-
-  return (
-    <div style={{
-      display: 'flex',
-      justifyContent: isUser ? 'flex-end' : 'flex-start',
-      marginBottom: 16,
-      animation: shouldAnimate ? 'msgIn 0.35s ease forwards' : 'none',
-    }}>
-      {/* Avatar dot for assistant */}
-      {!isUser && (
-        <div style={{
-          width: 28, height: 28, borderRadius: 9, background: '#0071E3',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0, marginRight: 10, marginTop: 2,
-        }}>
-          <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>DG</span>
-        </div>
-      )}
-      <div style={{
-        maxWidth: '78%',
-        background: isUser ? '#0071E3' : '#FFFFFF',
-        color: isUser ? '#fff' : '#1D1D1F',
-        borderRadius: isUser ? '20px 20px 5px 20px' : '5px 20px 20px 20px',
-        padding: '14px 18px',
-        fontSize: 17, lineHeight: 1.6,
-        boxShadow: isUser ? 'none' : '0 2px 12px rgba(0,0,0,0.08)',
-        border: isUser ? 'none' : '1px solid rgba(0,0,0,0.05)',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-      }}>
-        {message.content}
-      </div>
-    </div>
-  );
-}
-
-/* ── Typing indicator ── */
-function TypingIndicator() {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-      <div style={{
-        width: 28, height: 28, borderRadius: 9, background: '#0071E3',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-      }}>
-        <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>DG</span>
-      </div>
-      <div style={{
-        background: '#fff', borderRadius: '5px 20px 20px 20px',
-        padding: '14px 18px',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
-        border: '1px solid rgba(0,0,0,0.05)',
-        display: 'flex', gap: 5, alignItems: 'center',
-      }}>
-        {[0, 1, 2].map(i => (
-          <div key={i} style={{
-            width: 7, height: 7, borderRadius: '50%', background: '#C7C7CC',
-            animation: `bounce 1.1s ease infinite ${i * 0.18}s`,
-          }} />
-        ))}
-      </div>
-      <style>{`@keyframes bounce { 0%,80%,100%{transform:translateY(0);opacity:0.5} 40%{transform:translateY(-6px);opacity:1} }`}</style>
-    </div>
-  );
+  )
 }

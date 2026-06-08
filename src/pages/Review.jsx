@@ -1,227 +1,256 @@
-import { useState } from 'react';
-import { useApp } from '../context/AppContext.jsx';
-import { useAI } from '../hooks/useAI.js';
+import { useState } from 'react'
+import { useApp } from '../context/AppContext.jsx'
+import { useAI } from '../hooks/useAI.js'
+import { motion, AnimatePresence } from 'framer-motion'
 
-function buildReviewPrompt(profile, weekCheckins) {
-  const days = weekCheckins.map(c => {
-    const d = new Date(c.date).toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' });
-    const parts = [];
-    if (c.morning?.business) parts.push(`intenție antreprenor: "${c.morning.business}"`);
-    if (c.morning?.balance)  parts.push(`intenție echilibru: "${c.morning.balance}"`);
-    if (c.evening?.done)     parts.push(`realizat: "${c.evening.done}"`);
-    if (c.evening?.learned)  parts.push(`învățat: "${c.evening.learned}"`);
-    if (c.evening?.tomorrow) parts.push(`îmbunătățire: "${c.evening.tomorrow}"`);
-    return `${d}:\n  ${parts.join('\n  ')}`;
-  }).join('\n\n');
-
-  return `Ești un coach de creștere personală bazat pe filozofia Jim Rohn.
-Utilizator: ${profile?.name}, identitate=[${profile?.identity?.join(', ')}], focus=${profile?.focus}.
-Datele din ultimele 7 zile:
-${days || 'Nu există date înregistrate.'}
-
-Generează un review săptămânal în format JSON strict:
-{
-  "title": "O frază care definește această săptămână",
-  "wins": ["realizare concretă 1", "realizare concretă 2", "realizare concretă 3"],
-  "lesson": "Lecția principală a săptămânii, extrasă din ce a scris utilizatorul",
-  "score": 7,
-  "scoreReason": "Explicație scurtă pentru scor (1-2 propoziții)",
-  "nextFocus": "Un singur focus clar pentru săptămâna viitoare"
+function getWeekOf(dateStr) {
+  const d = new Date(dateStr || new Date())
+  const day = d.getDay() || 7
+  d.setDate(d.getDate() - day + 1) // Monday
+  return d.toISOString().split('T')[0]
 }
-Scorul e de la 1 la 10. Fii direct, nu laudă fals. Răspunde DOAR cu JSON valid.`;
+
+function buildReviewPrompt(profile, sessions) {
+  const name = profile?.name || 'utilizatorul'
+  const focus = profile?.focus || ''
+  const identity = (profile?.identity || []).join(', ')
+
+  const sessCtx = sessions.map(s => {
+    const parts = []
+    if (s.lesson_title) parts.push(`Lecție: "${s.lesson_title}"`)
+    if (s.quiz_score != null) parts.push(`Quiz: ${s.quiz_score}%`)
+    if (s.task_title) parts.push(`Task: "${s.task_title}"`)
+    if (s.evening_applied) parts.push(`Aplicat: ${s.evening_applied}`)
+    if (s.evening_reflection) parts.push(`Reflecție: "${s.evening_reflection}"`)
+    return `[${s.date}] ${parts.join(' | ')}`
+  }).join('\n')
+
+  const completedCount = sessions.filter(s => s.loop_completed).length
+  const avgScore = sessions.filter(s => s.quiz_score != null).length
+    ? Math.round(sessions.filter(s => s.quiz_score != null).reduce((a, s) => a + s.quiz_score, 0) / sessions.filter(s => s.quiz_score != null).length)
+    : null
+
+  return `Ești coach personal pentru ${name}. Focus: ${focus}. Identitate vizată: ${identity}.
+
+Datele săptămânii:
+${sessCtx || 'Nicio sesiune completată'}
+Zile complete: ${completedCount}/7${avgScore != null ? ` | Scor mediu quiz: ${avgScore}%` : ''}
+
+Generează un review săptămânal structurat în română, cu tonul unui mentor cald și direct.
+Format JSON exact:
+{
+  "titlu": "titlu inspirațional scurt pentru săptămână",
+  "rezumat": "2-3 propoziții despre ce a fost săptămâna aceasta — pattern-uri, energie, progres",
+  "victorii": ["victorie 1", "victorie 2"],
+  "provocari": ["provocare sau pattern de îmbunătățit"],
+  "insight": "cel mai important lucru de reținut din această săptămână (1-2 propoziții)",
+  "provocare_saptamana_viitoare": "o provocare concretă și specifică pentru săptămâna viitoare"
+}`
+}
+
+function ScoreBar({ label, value, max = 100, color = 'var(--accent)' }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+        <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{label}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{value}</span>
+      </div>
+      <div className="progress-track">
+        <motion.div
+          className="progress-fill"
+          initial={{ width: 0 }}
+          animate={{ width: `${(value / max) * 100}%` }}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
+          style={{ background: color }}
+        />
+      </div>
+    </div>
+  )
 }
 
 export default function Review() {
-  const { profile, checkins, reviews, upsertReview, apiKey } = useApp();
-  const { callAIJSON, loading } = useAI();
-  const [expanded, setExpanded] = useState(null);
+  const { profile, sessions, reviews, upsertReview, apiKey } = useApp()
+  const { callAIJSON } = useAI()
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const weekStart = (() => {
-    const d = new Date();
-    const day = d.getDay();
-    d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
-    d.setHours(0, 0, 0, 0);
-    return d;
-  })();
+  const weekOf = getWeekOf()
+  const existingReview = reviews.find(r => r.weekOf === weekOf)
 
-  const weekCheckins = checkins
-    .filter(c => new Date(c.date) >= weekStart)
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  // Sessions from this week (Mon-Sun)
+  const weekStart = new Date(weekOf)
+  const weekEnd = new Date(weekOf)
+  weekEnd.setDate(weekEnd.getDate() + 6)
+  const weekSessions = sessions.filter(s => {
+    const d = new Date(s.date)
+    return d >= weekStart && d <= weekEnd
+  })
 
-  const handleGenerate = async () => {
-    if (!apiKey) return;
-    const data = await callAIJSON(buildReviewPrompt(profile, weekCheckins), { fast: false, max_tokens: 800 });
-    if (!data) return;
-    const weekOf = weekStart.toISOString();
-    const review = {
-      id: Date.now(),
-      weekOf,
-      generatedAt: new Date().toISOString(),
-      checkinCount: weekCheckins.length,
-      title:       data.title       || '',
-      wins:        data.wins        || [],
-      lesson:      data.lesson      || '',
-      score:       data.score       || 5,
-      scoreReason: data.scoreReason || '',
-      nextFocus:   data.nextFocus   || '',
-    };
-    upsertReview(review);
-    setExpanded(review.id);
-  };
+  // Past reviews sorted
+  const pastReviews = [...reviews]
+    .sort((a, b) => b.weekOf.localeCompare(a.weekOf))
+    .slice(0, 8)
 
-  const sorted = [...reviews].sort((a, b) => new Date(b.weekOf) - new Date(a.weekOf));
-  const thisWeekReview = sorted.find(r => new Date(r.weekOf) >= weekStart && new Date(r.weekOf) < new Date(weekStart.getTime() + 7 * 86400000));
+  const generateReview = async () => {
+    if (!apiKey) { setError('Configurează cheia API în Setări.'); return }
+    setError('')
+    setLoading(true)
+    try {
+      const prompt = buildReviewPrompt(profile, weekSessions)
+      const data = await callAIJSON(prompt, { fast: false, max_tokens: 800 })
+      const review = {
+        weekOf,
+        ...data,
+        generatedAt: new Date().toISOString(),
+        sessionCount: weekSessions.length,
+        completedCount: weekSessions.filter(s => s.loop_completed).length,
+      }
+      upsertReview(review)
+    } catch {
+      setError('Eroare la generare. Încearcă din nou.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const review = existingReview
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F5F5F7' }}>
-      <div style={{ maxWidth: 560, margin: '0 auto', padding: '32px 20px 100px' }} className="md:pl-24">
-
+    <div className="page">
+      <div className="page-inner">
         {/* Header */}
-        <div className="fade-up" style={{ marginBottom: 32 }}>
-          <h1 style={{
-            margin: '0 0 5px', fontSize: 32, fontWeight: 700,
-            letterSpacing: '-0.5px', color: '#1D1D1F', lineHeight: 1.1,
-          }}>Review</h1>
-          <p style={{ margin: 0, fontSize: 14, color: '#0071E3', fontWeight: 500 }}>
-            Săptămâna aceasta · {weekCheckins.length} {weekCheckins.length === 1 ? 'zi înregistrată' : 'zile înregistrate'}
+        <div style={{ marginBottom: 24 }}>
+          <p className="label-sm">Review Săptămânal</p>
+          <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginBottom: 4, letterSpacing: '-0.4px' }}>
+            {review ? review.titlu || 'Săptămâna ta' : 'Reflecție de sfârșit de săptămână'}
+          </h1>
+          <p style={{ fontSize: 14, color: 'var(--text-3)' }}>
+            Săptămâna {weekOf} · {weekSessions.filter(s => s.loop_completed).length}/{weekSessions.length} zile complete
           </p>
         </div>
 
-        {/* Generate card */}
-        {!apiKey ? (
-          <div className="fade-up-1" style={{
-            background: '#FFFBEB', border: '1px solid rgba(245,158,11,0.3)',
-            borderRadius: 14, padding: '14px 18px', marginBottom: 20,
-          }}>
-            <p style={{ margin: 0, fontSize: 14, color: '#92400E', lineHeight: 1.5 }}>
-              Configurează un API Key în Setări pentru a genera review-uri AI.
-            </p>
-          </div>
-        ) : (
-          <div className="card fade-up-1" style={{ padding: 24, marginBottom: 20 }}>
-            <h2 style={{ margin: '0 0 7px', fontSize: 17, fontWeight: 600, color: '#1D1D1F' }}>
-              Review săptămâna aceasta
-            </h2>
-            <p style={{ margin: '0 0 20px', fontSize: 14, color: '#6E6E73', lineHeight: 1.55 }}>
-              {weekCheckins.length === 0
-                ? 'Nu ai date înregistrate săptămâna aceasta. Review-ul va fi bazat pe profilul tău.'
-                : `Bazat pe ${weekCheckins.length} ${weekCheckins.length === 1 ? 'zi înregistrată' : 'zile înregistrate'}.`}
-            </p>
-            <button
-              className="btn-primary"
-              style={{ width: '100%' }}
-              onClick={handleGenerate}
-              disabled={loading}
-            >
-              {loading
-                ? 'Se analizează...'
-                : thisWeekReview ? 'Regenerează review' : 'Generează review'}
-            </button>
+        {/* Stats row */}
+        {weekSessions.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 20 }}>
+            {[
+              { label: 'Zile', value: weekSessions.filter(s => s.loop_completed).length + '/7' },
+              {
+                label: 'Quiz avg',
+                value: weekSessions.filter(s => s.quiz_score != null).length
+                  ? Math.round(weekSessions.filter(s => s.quiz_score != null).reduce((a, s) => a + s.quiz_score, 0) / weekSessions.filter(s => s.quiz_score != null).length) + '%'
+                  : '—'
+              },
+              {
+                label: 'Aplicat',
+                value: weekSessions.filter(s => s.evening_applied === 'Da').length + '/' + weekSessions.filter(s => s.evening_applied).length || '—'
+              },
+            ].map(({ label, value }) => (
+              <div key={label} className="card" style={{ padding: '14px 12px', textAlign: 'center' }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent)', marginBottom: 2 }}>{value}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{label}</div>
+              </div>
+            ))}
           </div>
         )}
 
-        {/* Reviews list */}
-        {sorted.map((r, i) => (
-          <div key={r.id} style={{ animation: `fadeUp 0.4s ease ${0.1 + i * 0.08}s both` }}>
-            <ReviewCard
-              review={r}
-              isExpanded={expanded === r.id}
-              onToggle={() => setExpanded(expanded === r.id ? null : r.id)}
-            />
+        {/* Generate / Regenerate */}
+        {!review ? (
+          <div className="card" style={{ textAlign: 'center', padding: '40px 24px', marginBottom: 20 }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>📊</div>
+            <p style={{ color: 'var(--text-2)', fontSize: 15, marginBottom: 20, lineHeight: 1.6 }}>
+              {weekSessions.length === 0
+                ? 'Completează cel puțin o sesiune această săptămână pentru a genera review-ul.'
+                : 'Generează review-ul săptămânii cu Claude Sonnet.'}
+            </p>
+            {error && <p style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</p>}
+            <motion.button
+              className="btn btn-primary"
+              onClick={generateReview}
+              disabled={loading || weekSessions.length === 0}
+              whileTap={{ scale: 0.97 }}
+            >
+              {loading ? 'Se generează...' : '✨ Generează review'}
+            </motion.button>
           </div>
-        ))}
+        ) : (
+          <AnimatePresence>
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+              {/* Rezumat */}
+              <div className="card" style={{ marginBottom: 12, padding: '18px 20px' }}>
+                <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.7, margin: 0 }}>{review.rezumat}</p>
+              </div>
 
-        {sorted.length === 0 && !loading && (
-          <div className="fade-up-2" style={{ textAlign: 'center', paddingTop: 48 }}>
-            <p style={{ color: '#AEAEB2', fontSize: 15 }}>Primul tău review apare după ce îl generezi.</p>
+              {/* Victorii */}
+              {review.victorii?.length > 0 && (
+                <div className="card" style={{ marginBottom: 12, padding: '18px 20px' }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--green)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>Victorii</p>
+                  {review.victorii.map((v, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 6 }}>
+                      <span style={{ color: 'var(--green)', marginTop: 1 }}>✓</span>
+                      <span style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.5 }}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Provocări */}
+              {review.provocari?.length > 0 && (
+                <div className="card" style={{ marginBottom: 12, padding: '18px 20px' }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>De îmbunătățit</p>
+                  {review.provocari.map((p, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 6 }}>
+                      <span style={{ color: 'var(--amber)', marginTop: 1 }}>→</span>
+                      <span style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.5 }}>{p}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Insight */}
+              {review.insight && (
+                <div className="card" style={{
+                  marginBottom: 12, padding: '18px 20px',
+                  background: 'var(--accent-light)', border: '1.5px solid rgba(124,111,247,0.15)',
+                }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Insight cheie</p>
+                  <p style={{ fontSize: 15, color: 'var(--text)', lineHeight: 1.6, margin: 0, fontWeight: 500 }}>"{review.insight}"</p>
+                </div>
+              )}
+
+              {/* Provocare săptămâna viitoare */}
+              {review.provocare_saptamana_viitoare && (
+                <div className="card" style={{ marginBottom: 20, padding: '18px 20px' }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Provocarea săptămânii viitoare</p>
+                  <p style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.6, margin: 0 }}>{review.provocare_saptamana_viitoare}</p>
+                </div>
+              )}
+
+              {error && <p style={{ color: 'var(--red)', fontSize: 13, marginBottom: 8 }}>{error}</p>}
+              <motion.button className="btn btn-secondary btn-full" onClick={generateReview} disabled={loading} whileTap={{ scale: 0.97 }}>
+                {loading ? 'Se regenerează...' : '↺ Regenerează'}
+              </motion.button>
+            </motion.div>
+          </AnimatePresence>
+        )}
+
+        {/* Past reviews */}
+        {pastReviews.filter(r => r.weekOf !== weekOf).length > 0 && (
+          <div style={{ marginTop: 28 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-3)', marginBottom: 12, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              Review-uri anterioare
+            </p>
+            {pastReviews.filter(r => r.weekOf !== weekOf).map(r => (
+              <div key={r.weekOf} className="card" style={{ marginBottom: 10, padding: '14px 16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{r.titlu || r.weekOf}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{r.completedCount}/{r.sessionCount || 7}</span>
+                </div>
+                {r.insight && <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0, lineHeight: 1.5 }}>"{r.insight}"</p>}
+              </div>
+            ))}
           </div>
         )}
       </div>
     </div>
-  );
-}
-
-function ReviewCard({ review, isExpanded, onToggle }) {
-  const scoreColor = review.score >= 8 ? '#34C759' : review.score >= 5 ? '#0071E3' : '#FF9500';
-
-  return (
-    <div className="card" style={{ marginBottom: 12, overflow: 'hidden' }}>
-      {/* Header — always visible */}
-      <button onClick={onToggle} style={{
-        width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-        padding: '20px 22px', display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', textAlign: 'left', gap: 16,
-      }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#1D1D1F', lineHeight: 1.35 }}>
-            {review.title || 'Review'}
-          </p>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#AEAEB2' }}>
-            {new Date(review.weekOf).toLocaleDateString('ro-RO', { day: 'numeric', month: 'long', year: 'numeric' })}
-          </p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-          <div style={{ textAlign: 'right' }}>
-            <span style={{ fontSize: 22, fontWeight: 700, color: scoreColor, display: 'block', lineHeight: 1 }}>
-              {review.score}
-            </span>
-            <span style={{ fontSize: 10, color: '#C7C7CC' }}>/ 10</span>
-          </div>
-          <span style={{ fontSize: 16, color: '#C7C7CC', transition: 'transform 0.2s ease', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none' }}>▾</span>
-        </div>
-      </button>
-
-      {/* Expanded content */}
-      {isExpanded && (
-        <div style={{ padding: '0 22px 22px', borderTop: '1px solid #F2F2F7' }}>
-
-          {review.wins?.length > 0 && (
-            <Section label="Realizări" color="#34C759">
-              {review.wins.map((w, i) => (
-                <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 9, alignItems: 'flex-start' }}>
-                  <span style={{ color: '#34C759', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>✓</span>
-                  <p style={{ margin: 0, fontSize: 15, color: '#1D1D1F', lineHeight: 1.55 }}>{w}</p>
-                </div>
-              ))}
-            </Section>
-          )}
-
-          {review.lesson && (
-            <Section label="Lecția săptămânii" color="#0071E3">
-              <p style={{ margin: 0, fontSize: 15, color: '#1D1D1F', lineHeight: 1.65 }}>{review.lesson}</p>
-            </Section>
-          )}
-
-          {review.scoreReason && (
-            <Section label="Scor mental" color="#6E6E73">
-              <p style={{ margin: 0, fontSize: 14, color: '#6E6E73', lineHeight: 1.55 }}>{review.scoreReason}</p>
-            </Section>
-          )}
-
-          {review.nextFocus && (
-            <div style={{
-              marginTop: 16, background: '#F0F7FF', borderRadius: 14, padding: '16px 18px',
-              borderLeft: '3px solid #0071E3',
-            }}>
-              <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 700, color: '#0071E3', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Focus săptămâna viitoare
-              </p>
-              <p style={{ margin: 0, fontSize: 15, color: '#1D1D1F', lineHeight: 1.55 }}>{review.nextFocus}</p>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Section({ icon, label, color, children }) {
-  return (
-    <div style={{ marginTop: 18 }}>
-      <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 600, color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-        {icon && <span style={{ marginRight: 6 }}>{icon}</span>}{label}
-      </p>
-      {children}
-    </div>
-  );
+  )
 }

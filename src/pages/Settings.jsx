@@ -1,158 +1,169 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useApp } from '../context/AppContext.jsx';
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useApp } from '../context/AppContext.jsx'
+import { requestNotificationPermission } from '../hooks/useNotifications.js'
+import { motion } from 'framer-motion'
 
 export default function Settings() {
-  const navigate = useNavigate();
-  const { apiKey, setApiKey, profile, resetAll } = useApp();
-  const [keyInput,   setKeyInput]   = useState(apiKey || '');
-  const [showKey,    setShowKey]    = useState(false);
-  const [saved,      setSaved]      = useState(false);
-  const [showReset,  setShowReset]  = useState(false);
+  const navigate = useNavigate()
+  const { profile, apiKey, setApiKey, notifTimes, setNotifTimes, resetAll } = useApp()
 
-  const handleSave = () => {
-    setApiKey(keyInput.trim());
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-  };
+  const [keyInput, setKeyInput] = useState(apiKey || '')
+  const [keySaved, setKeySaved] = useState(false)
+  const [notifStatus, setNotifStatus] = useState(
+    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
+  )
+  const [confirmReset, setConfirmReset] = useState(false)
 
-  const handleReset = () => { resetAll(); navigate('/onboarding'); };
+  const saveKey = () => {
+    setApiKey(keyInput.trim())
+    setKeySaved(true)
+    setTimeout(() => setKeySaved(false), 2000)
+  }
+
+  const requestNotif = async () => {
+    const result = await requestNotificationPermission()
+    setNotifStatus(result)
+  }
+
+  const handleReset = () => {
+    if (!confirmReset) { setConfirmReset(true); return }
+    resetAll()
+    navigate('/onboarding')
+  }
+
+  const notifStatusLabel = {
+    granted: '✓ Activat',
+    denied: '✗ Blocat (permite din setările browserului)',
+    default: 'Cere permisiunea',
+    unsupported: 'Browserul nu suportă notificări',
+  }[notifStatus] || 'Necunoscut'
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F5F5F7' }}>
-      <div style={{ maxWidth: 480, margin: '0 auto', padding: '36px 20px 120px' }} className="md:pl-24">
-
-        {/* Header */}
-        <div className="fade-up" style={{ marginBottom: 32 }}>
-          <h1 style={{
-            margin: '0 0 5px', fontSize: 32, fontWeight: 700,
-            letterSpacing: '-0.5px', color: '#1D1D1F', lineHeight: 1.1,
-          }}>Setări</h1>
-          <p style={{ margin: 0, fontSize: 14, color: '#0071E3', fontWeight: 500 }}>
-            Profil și configurare
-          </p>
-        </div>
+    <div className="page">
+      <div className="page-inner">
+        <p className="label-sm">Configurare</p>
+        <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginBottom: 24, letterSpacing: '-0.4px' }}>
+          Setări
+        </h1>
 
         {/* Profile summary */}
         {profile && (
-          <div className="card fade-up-1" style={{ padding: 22, marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{
-                width: 48, height: 48, borderRadius: 14, background: '#E8F0FB',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 20, fontWeight: 700, color: '#0071E3', flexShrink: 0,
-              }}>
-                {profile.name?.[0]?.toUpperCase()}
-              </div>
-              <div>
-                <p style={{ margin: 0, fontSize: 17, fontWeight: 600, color: '#1D1D1F' }}>{profile.name}</p>
-                {profile.identity?.length > 0 && (
-                  <p style={{ margin: '3px 0 0', fontSize: 14, color: '#0071E3', fontWeight: 500 }}>
-                    {profile.identity.join(' · ')}
-                  </p>
-                )}
-                {profile.focus && (
-                  <p style={{ margin: '2px 0 0', fontSize: 13, color: '#AEAEB2' }}>Focus: {profile.focus}</p>
-                )}
-              </div>
-            </div>
+          <div className="card" style={{ marginBottom: 16, padding: '16px 20px' }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Profilul tău</p>
+            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>{profile.name}</p>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 2 }}>Focus: {profile.focus}</p>
+            <p style={{ fontSize: 13, color: 'var(--text-3)' }}>Identitate: {(profile.identity || []).join(', ')}</p>
           </div>
         )}
 
         {/* API Key */}
-        <div className="card fade-up-2" style={{ padding: 22, marginBottom: 14 }}>
-          <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: '#1D1D1F' }}>Anthropic API Key</h3>
-          <p style={{ margin: '0 0 18px', fontSize: 14, color: '#6E6E73', lineHeight: 1.55 }}>
-            Salvată local în browser.{' '}
+        <div className="card" style={{ marginBottom: 16, padding: '18px 20px' }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>Cheie API Anthropic</p>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12, lineHeight: 1.5 }}>
+            Obține cheia de la{' '}
             <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer"
-              style={{ color: '#0071E3', textDecoration: 'none', fontWeight: 500 }}>
-              Obține cheie →
+              style={{ color: 'var(--accent)', textDecoration: 'none' }}>
+              console.anthropic.com
             </a>
+            {' '}→ API Keys
           </p>
-          <div style={{ position: 'relative', marginBottom: 14 }}>
-            <input
-              type={showKey ? 'text' : 'password'}
-              value={keyInput}
-              onChange={e => setKeyInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && keyInput.trim() && handleSave()}
-              placeholder="sk-ant-..."
-              className="input-field"
-              style={{ fontFamily: 'monospace', fontSize: 15, paddingRight: 72 }}
-            />
-            <button
-              onClick={() => setShowKey(v => !v)}
-              style={{
-                position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: '#8E8E93', fontSize: 13, fontWeight: 500,
-                transition: 'color 0.15s',
-              }}
-              onMouseEnter={e => e.currentTarget.style.color = '#1D1D1F'}
-              onMouseLeave={e => e.currentTarget.style.color = '#8E8E93'}
-            >
-              {showKey ? 'Ascunde' : 'Arată'}
-            </button>
-          </div>
-          <p style={{ margin: '0 0 16px', fontSize: 12, color: '#AEAEB2', lineHeight: 1.4 }}>
-            Haiku (răspunsuri rapide) · Sonnet (coach și review)
-          </p>
-          <button
-            className="btn-primary"
-            style={{ width: '100%' }}
-            disabled={!keyInput.trim()}
-            onClick={handleSave}
+          <input
+            className="input"
+            type="password"
+            placeholder="sk-ant-..."
+            value={keyInput}
+            onChange={e => { setKeyInput(e.target.value); setKeySaved(false) }}
+            style={{ marginBottom: 10, fontSize: 14, fontFamily: 'monospace' }}
+          />
+          <motion.button
+            className={`btn btn-full ${keySaved ? 'btn-success' : 'btn-primary'}`}
+            onClick={saveKey}
+            whileTap={{ scale: 0.97 }}
           >
-            {saved ? '✓ Salvat' : 'Salvează'}
-          </button>
-        </div>
-
-        {/* Reset */}
-        <div className="card fade-up-3" style={{ padding: 22, borderColor: 'rgba(255,59,48,0.2)' }}>
-          <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: '#FF3B30' }}>Resetează totul</h3>
-          <p style={{ margin: '0 0 18px', fontSize: 14, color: '#6E6E73', lineHeight: 1.55 }}>
-            Șterge profilul și toate datele. Ireversibil.
-          </p>
-          {!showReset ? (
-            <button
-              onClick={() => setShowReset(true)}
-              style={{
-                background: 'none', border: '1.5px solid #FF3B30', borderRadius: 14,
-                padding: '13px 22px', color: '#FF3B30', fontSize: 16, fontWeight: 600,
-                cursor: 'pointer', transition: 'background 0.15s ease',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,59,48,0.05)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'none'}
-            >
-              Resetează
-            </button>
-          ) : (
-            <div style={{
-              background: '#FFF5F5', borderRadius: 14, padding: '16px 18px',
-              border: '1px solid rgba(255,59,48,0.15)',
-            }}>
-              <p style={{ margin: '0 0 14px', fontSize: 14, color: '#FF3B30', fontWeight: 500 }}>
-                Ești sigur? Nu se poate recupera.
-              </p>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowReset(false)}>
-                  Anulează
-                </button>
-                <button
-                  onClick={handleReset}
-                  style={{
-                    flex: 1, background: '#FF3B30', color: '#fff', border: 'none',
-                    borderRadius: 14, padding: '13px', fontSize: 16,
-                    fontWeight: 600, cursor: 'pointer',
-                  }}
-                >
-                  Șterge tot
-                </button>
-              </div>
-            </div>
+            {keySaved ? '✓ Salvat' : 'Salvează cheia'}
+          </motion.button>
+          {apiKey && (
+            <p style={{ fontSize: 12, color: 'var(--green)', textAlign: 'center', marginTop: 8 }}>
+              ✓ Cheie activă ({apiKey.slice(0, 8)}…)
+            </p>
           )}
         </div>
 
+        {/* Notifications */}
+        <div className="card" style={{ marginBottom: 16, padding: '18px 20px' }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>Notificări</p>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ fontSize: 14, color: 'var(--text)' }}>Status</span>
+            <span style={{ fontSize: 13, color: notifStatus === 'granted' ? 'var(--green)' : 'var(--text-3)' }}>
+              {notifStatusLabel}
+            </span>
+          </div>
+
+          {notifStatus !== 'granted' && notifStatus !== 'unsupported' && (
+            <motion.button className="btn btn-secondary btn-full" onClick={requestNotif} whileTap={{ scale: 0.97 }}
+              style={{ marginBottom: 12 }}>
+              Activează notificările
+            </motion.button>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 6 }}>🌅 Dimineața</p>
+              <input
+                type="time"
+                className="input"
+                value={notifTimes?.morning || '08:00'}
+                onChange={e => setNotifTimes({ ...notifTimes, morning: e.target.value })}
+                style={{ padding: '10px 12px', fontSize: 15 }}
+              />
+            </div>
+            <div>
+              <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 6 }}>🌙 Seara</p>
+              <input
+                type="time"
+                className="input"
+                value={notifTimes?.evening || '21:00'}
+                onChange={e => setNotifTimes({ ...notifTimes, evening: e.target.value })}
+                style={{ padding: '10px 12px', fontSize: 15 }}
+              />
+            </div>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 8, lineHeight: 1.5 }}>
+            Notificările funcționează cât timp tab-ul e deschis în browser.
+          </p>
+        </div>
+
+        {/* Reset */}
+        <div className="card" style={{ padding: '18px 20px' }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--red)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Zonă periculoasă</p>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 14, lineHeight: 1.5 }}>
+            Resetarea șterge tot istoricul local. Datele din Supabase rămân.
+          </p>
+          <motion.button
+            className="btn btn-danger btn-full"
+            onClick={handleReset}
+            whileTap={{ scale: 0.97 }}
+          >
+            {confirmReset ? '⚠️ Confirmi? Click din nou.' : 'Resetează aplicația'}
+          </motion.button>
+          {confirmReset && (
+            <motion.button
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              className="btn btn-ghost btn-full"
+              onClick={() => setConfirmReset(false)}
+              style={{ marginTop: 8 }}
+            >
+              Anulează
+            </motion.button>
+          )}
+        </div>
+
+        <p style={{ fontSize: 12, color: 'var(--text-3)', textAlign: 'center', marginTop: 24 }}>
+          Daily Growth v4 · Construit cu Claude
+        </p>
       </div>
     </div>
-  );
+  )
 }
