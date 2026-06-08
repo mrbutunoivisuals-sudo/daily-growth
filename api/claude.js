@@ -14,10 +14,11 @@ export default async function handler(req, res) {
   const apiKey = req.headers['x-api-key'];
   if (!apiKey) return res.status(401).json({ error: 'Lipsește cheia API.' });
 
-  const { prompt, fast } = req.body || {};
+  const { prompt, fast, max_tokens } = req.body || {};
   if (!prompt) return res.status(400).json({ error: 'Lipsește promptul.' });
 
   const model = fast ? MODEL_FAST : MODEL_SMART;
+  const maxTokens = (typeof max_tokens === 'number' && max_tokens > 0) ? max_tokens : 1000;
 
   let upstream;
   try {
@@ -30,7 +31,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 1500,
+        max_tokens: maxTokens,
         messages: [{ role: 'user', content: prompt }],
       }),
     });

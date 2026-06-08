@@ -12,7 +12,7 @@ export function useAI() {
     catch { return ''; }
   };
 
-  const callAI = async (prompt, { fast = false } = {}) => {
+  const callAI = async (prompt, { fast = false, max_tokens } = {}) => {
     setLoading(true);
     setError(null);
 
@@ -30,7 +30,7 @@ export function useAI() {
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
         },
-        body: JSON.stringify({ prompt, fast }),
+        body: JSON.stringify({ prompt, fast, ...(max_tokens ? { max_tokens } : {}) }),
       });
 
       const rawText = await response.text();
@@ -55,8 +55,8 @@ export function useAI() {
     }
   };
 
-  const callAIJSON = async (prompt, { fast = false } = {}) => {
-    const text = await callAI(prompt, { fast });
+  const callAIJSON = async (prompt, { fast = false, max_tokens } = {}) => {
+    const text = await callAI(prompt, { fast, max_tokens });
     if (!text) return null;
     try {
       // Elimină markdown code fences: ```json ... ``` sau ``` ... ```
