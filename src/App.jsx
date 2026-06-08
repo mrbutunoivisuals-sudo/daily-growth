@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import NavBar    from './components/NavBar.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import Dashboard  from './pages/Dashboard.jsx';
@@ -32,12 +33,16 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <BrowserRouter>
-        <div style={{ minHeight: '100vh', background: '#F5F5F7' }}>
-          <AppRoutes />
-        </div>
-      </BrowserRouter>
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <BrowserRouter>
+          <ErrorBoundary>
+            <div style={{ minHeight: '100vh', background: '#F5F5F7' }}>
+              <AppRoutes />
+            </div>
+          </ErrorBoundary>
+        </BrowserRouter>
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

@@ -108,7 +108,7 @@ export default function NavBar() {
             fontSize: 10, letterSpacing: '0.01em',
             transition: 'color 0.15s ease',
           })}>
-            <Icon size={isActive => isActive ? 22 : 21} />
+            <Icon size={22} />
             <span>{label}</span>
           </NavLink>
         ))}
