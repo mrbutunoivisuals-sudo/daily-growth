@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { supabase } from '../lib/supabase.js'
 import {
-  getUserId,
   fetchProfile, syncProfile,
   fetchTodaySession, syncSession, fetchRecentSessions, rowToSession,
   fetchCoachMessages, insertCoachMessage, clearCoachMessages, rowToCoachMsg,
@@ -9,7 +9,7 @@ import {
 
 const AppContext = createContext(null)
 
-// ── localStorage keys ─────────────────────────────────────────────────────────
+// ── localStorage keys (profile/sessions/etc. still cached locally for speed) ──
 const K = {
   profile:  'dg_v4_profile',
   sessions: 'dg_v4_sessions',
@@ -33,8 +33,13 @@ export function todayStr() {
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 export function AppProvider({ children }) {
-  const userId = getUserId()
+  // ── Auth state ────────────────────────────────────────────────────────────
+  // authLoading = true until Supabase tells us whether a session exists.
+  // This is the single source of truth for "is the user logged in?".
+  const [session,     setSession]     = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
 
+  // ── App data ──────────────────────────────────────────────────────────────
   const [profile,    setProfileRaw]  = useState(() => load(K.profile, null))
   const [sessions,   setSessionsRaw] = useState(() => load(K.sessions, []))
   const [coach,      setCoachRaw]    = useState(() => load(K.coach, []))
@@ -42,55 +47,65 @@ export function AppProvider({ children }) {
   const [apiKey,     setApiKeyRaw]   = useState(() => load(K.apiKey, ''))
   const [notifTimes, setNotifRaw]    = useState(() => load(K.notif, { morning: '08:00', evening: '21:00' }))
 
-  // hydrating: true only when localStorage has no profile (new device / cleared storage).
-  // Prevents briefly flashing the onboarding screen while we check Supabase.
-  const [hydrating, setHydrating]   = useState(() => load(K.profile, null) === null)
-
-  // ── Hydrate from Supabase on mount ────────────────────────────────────────
+  // ── Listen for Supabase auth changes ─────────────────────────────────────
   useEffect(() => {
+    // getSession() resolves with the current persisted session (or null).
+    // Works reliably in PWA and across Safari restarts because Supabase stores
+    // the refresh token in localStorage under its own keys and refreshes it
+    // automatically — we no longer manage our own user UUID.
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s)
+      if (!s) setAuthLoading(false) // no session → nothing to hydrate
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s)
+      if (!s) {
+        // Logged out — clear local cache
+        Object.values(K).forEach(k => localStorage.removeItem(k))
+        setProfileRaw(null); setSessionsRaw([]); setCoachRaw([])
+        setReviewsRaw([])
+        setAuthLoading(false)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // ── Hydrate app data from Supabase when session is available ──────────────
+  useEffect(() => {
+    if (!session?.user?.id) return
+
+    const userId = session.user.id
+
     async function hydrate() {
-      const local = load(K.profile, null)
-
-      console.group('[DG] hydrate() start')
-      console.log('userId (from localStorage dg_user_id):', userId)
-      console.log('localStorage dg_user_id raw:', localStorage.getItem('dg_user_id'))
-      console.log('localStorage dg_v4_profile raw:', localStorage.getItem(K.profile))
-      console.log('local profile parsed:', local)
-      console.groupEnd()
-
-      // ── Profile ──────────────────────────────────────────────────────────
+      // ── Profile ────────────────────────────────────────────────────────
       const { data: pRow, error: pErr } = await fetchProfile(userId)
 
-      console.group('[DG] fetchProfile result')
-      console.log('pRow:', pRow)
-      console.log('pErr:', pErr)
-      console.groupEnd()
+      if (pErr) console.warn('[DG] fetchProfile error:', pErr)
 
       if (pRow) {
+        const local = load(K.profile, null)
         const p = {
           name:      pRow.name     || local?.name     || '',
           identity:  Array.isArray(pRow.identity) && pRow.identity.length
-                       ? pRow.identity
-                       : (local?.identity || []),
+                       ? pRow.identity : (local?.identity || []),
           focus:     pRow.focus    || local?.focus    || '',
           createdAt: pRow.created_at || local?.createdAt,
+          // Never downgrade: if either source says done, it's done
           onboardingDone: !!pRow.onboarding_done || !!local?.onboardingDone,
         }
-        console.log('[DG] merged profile written:', p)
         save(K.profile, p)
         setProfileRaw(p)
-      } else {
-        console.log('[DG] no Supabase row found — keeping localStorage:', local)
       }
 
-      // ── Recent sessions ────────────────────────────────────────────────
+      // ── Sessions ───────────────────────────────────────────────────────
       const { data: sRows } = await fetchRecentSessions(userId, 20)
       if (sRows?.length) {
         const mapped = sRows.map(rowToSession)
         save(K.sessions, mapped); setSessionsRaw(mapped)
       }
 
-      // Today's session (might be fresher than the list above)
       const { data: todayRow } = await fetchTodaySession(userId, todayStr())
       if (todayRow) {
         const ts = rowToSession(todayRow)
@@ -117,9 +132,9 @@ export function AppProvider({ children }) {
     }
 
     hydrate()
-      .catch((e) => console.error('[DG] hydrate() threw:', e))
-      .finally(() => setHydrating(false))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+      .catch(e => console.warn('[DG] hydrate error:', e))
+      .finally(() => setAuthLoading(false))
+  }, [session?.user?.id])
 
   // ── Computed ──────────────────────────────────────────────────────────────
   const todaySession = sessions.find(s => s.date === todayStr()) || null
@@ -144,11 +159,15 @@ export function AppProvider({ children }) {
   const setProfile = useCallback((v) => {
     const n = typeof v === 'function' ? v(profile) : v
     save(K.profile, n); setProfileRaw(n)
-    syncProfile(userId, n).catch(() => {})
-  }, [profile, userId])
+    if (session?.user?.id) {
+      syncProfile(session.user.id, n).catch(() => {})
+    }
+  }, [profile, session])
 
   // ── Sessions ──────────────────────────────────────────────────────────────
   const updateTodaySession = useCallback((patch) => {
+    if (!session?.user?.id) return
+    const userId = session.user.id
     setSessionsRaw(prev => {
       const today = todayStr()
       const existing = prev.find(s => s.date === today) || { date: today }
@@ -158,7 +177,7 @@ export function AppProvider({ children }) {
       syncSession(userId, next).catch(() => {})
       return updated
     })
-  }, [userId])
+  }, [session])
 
   // ── Coach ─────────────────────────────────────────────────────────────────
   const appendCoachMsg = useCallback((msg) => {
@@ -167,13 +186,17 @@ export function AppProvider({ children }) {
       save(K.coach, next)
       return next
     })
-    insertCoachMessage(userId, msg).catch(() => {})
-  }, [userId])
+    if (session?.user?.id) {
+      insertCoachMessage(session.user.id, msg).catch(() => {})
+    }
+  }, [session])
 
   const clearCoach = useCallback(() => {
     save(K.coach, []); setCoachRaw([])
-    clearCoachMessages(userId).catch(() => {})
-  }, [userId])
+    if (session?.user?.id) {
+      clearCoachMessages(session.user.id).catch(() => {})
+    }
+  }, [session])
 
   // ── Reviews ───────────────────────────────────────────────────────────────
   const upsertReview = useCallback((review) => {
@@ -182,17 +205,22 @@ export function AppProvider({ children }) {
       save(K.reviews, next)
       return next
     })
-    syncReview(userId, review).catch(() => {})
-  }, [userId])
+    if (session?.user?.id) {
+      syncReview(session.user.id, review).catch(() => {})
+    }
+  }, [session])
 
   // ── Settings ──────────────────────────────────────────────────────────────
   const setApiKey = useCallback((v) => { save(K.apiKey, v); setApiKeyRaw(v) }, [])
+  const setNotifTimes = useCallback((v) => { save(K.notif, v); setNotifRaw(v) }, [])
 
-  const setNotifTimes = useCallback((v) => {
-    save(K.notif, v); setNotifRaw(v)
+  // ── Sign out ───────────────────────────────────────────────────────────────
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut()
+    // onAuthStateChange fires → clears everything
   }, [])
 
-  // ── Reset ──────────────────────────────────────────────────────────────────
+  // ── Reset (wipe local data, keep auth) ────────────────────────────────────
   const resetAll = useCallback(() => {
     Object.values(K).forEach(k => localStorage.removeItem(k))
     setProfileRaw(null); setSessionsRaw([]); setCoachRaw([])
@@ -201,6 +229,9 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
+      // auth
+      session, authLoading, signOut,
+      // app data
       profile, setProfile,
       sessions, todaySession, updateTodaySession, recentSessions,
       coach, appendCoachMsg, clearCoach,
@@ -209,7 +240,6 @@ export function AppProvider({ children }) {
       notifTimes, setNotifTimes,
       streak,
       resetAll,
-      hydrating,
     }}>
       {children}
     </AppContext.Provider>

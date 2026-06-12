@@ -6,7 +6,7 @@ import { motion } from 'framer-motion'
 
 export default function Settings() {
   const navigate = useNavigate()
-  const { profile, apiKey, setApiKey, notifTimes, setNotifTimes, resetAll } = useApp()
+  const { profile, apiKey, setApiKey, notifTimes, setNotifTimes, resetAll, signOut, session } = useApp()
 
   const [keyInput, setKeyInput] = useState(apiKey || '')
   const [keySaved, setKeySaved] = useState(false)
@@ -133,6 +133,23 @@ export default function Settings() {
           <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 8, lineHeight: 1.5 }}>
             Notificările funcționează cât timp tab-ul e deschis în browser.
           </p>
+        </div>
+
+        {/* Account */}
+        <div className="card" style={{ padding: '18px 20px', marginBottom: 16 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Cont</p>
+          {session?.user?.email && (
+            <p style={{ fontSize: 14, color: 'var(--text-2)', marginBottom: 14 }}>
+              Autentificat ca <strong style={{ color: 'var(--text)' }}>{session.user.email}</strong>
+            </p>
+          )}
+          <motion.button
+            className="btn btn-secondary btn-full"
+            onClick={signOut}
+            whileTap={{ scale: 0.97 }}
+          >
+            Deconectează-te
+          </motion.button>
         </div>
 
         {/* Reset */}

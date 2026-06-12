@@ -5,15 +5,9 @@
  */
 import { supabase } from './supabase.js'
 
-// ── User identity ─────────────────────────────────────────────────────────────
-const USER_ID_KEY = 'dg_user_id'
-export function getUserId() {
-  let id = localStorage.getItem(USER_ID_KEY)
-  if (!id) { id = crypto.randomUUID(); localStorage.setItem(USER_ID_KEY, id) }
-  return id
-}
-
 // ── Profile ───────────────────────────────────────────────────────────────────
+// userId is now always session.user.id from Supabase Auth (a stable UUID tied
+// to the authenticated user, not a fragile localStorage device ID).
 export async function fetchProfile(userId) {
   try {
     const { data, error } = await supabase
@@ -23,25 +17,16 @@ export async function fetchProfile(userId) {
 }
 
 export async function syncProfile(userId, profile) {
-  const payload = {
-    user_id: userId,
-    name: profile.name,
-    identity: profile.identity,
-    focus: profile.focus,
-    onboarding_done: !!profile.onboardingDone,
-  }
-  console.log('[DG] syncProfile payload:', payload)
   try {
-    const { data, error } = await supabase.from('profiles').upsert(
-      payload,
-      { onConflict: 'user_id' }
-    ).select()
-    console.log('[DG] syncProfile result — data:', data, 'error:', error)
-    return { data, error }
-  } catch (e) {
-    console.error('[DG] syncProfile threw:', e)
-    return { error: e }
-  }
+    const { error } = await supabase.from('profiles').upsert({
+      user_id: userId,
+      name: profile.name,
+      identity: profile.identity,
+      focus: profile.focus,
+      onboarding_done: !!profile.onboardingDone,
+    }, { onConflict: 'user_id' })
+    return { error }
+  } catch (e) { return { error: e } }
 }
 
 // ── Daily sessions (v4 — core table) ─────────────────────────────────────────
