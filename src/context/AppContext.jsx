@@ -35,30 +35,48 @@ export function todayStr() {
 export function AppProvider({ children }) {
   const userId = getUserId()
 
-  const [profile,   setProfileRaw]   = useState(() => load(K.profile, null))
-  const [sessions,  setSessionsRaw]  = useState(() => load(K.sessions, []))
-  const [coach,     setCoachRaw]     = useState(() => load(K.coach, []))
-  const [reviews,   setReviewsRaw]   = useState(() => load(K.reviews, []))
-  const [apiKey,    setApiKeyRaw]    = useState(() => load(K.apiKey, ''))
+  const [profile,    setProfileRaw]  = useState(() => load(K.profile, null))
+  const [sessions,   setSessionsRaw] = useState(() => load(K.sessions, []))
+  const [coach,      setCoachRaw]    = useState(() => load(K.coach, []))
+  const [reviews,    setReviewsRaw]  = useState(() => load(K.reviews, []))
+  const [apiKey,     setApiKeyRaw]   = useState(() => load(K.apiKey, ''))
   const [notifTimes, setNotifRaw]    = useState(() => load(K.notif, { morning: '08:00', evening: '21:00' }))
+
+  // hydrating: true only when localStorage has no profile (new device / cleared storage).
+  // Prevents briefly flashing the onboarding screen while we check Supabase.
+  const [hydrating, setHydrating]   = useState(() => load(K.profile, null) === null)
 
   // ── Hydrate from Supabase on mount ────────────────────────────────────────
   useEffect(() => {
     async function hydrate() {
-      // Profile
+      // ── Profile ──────────────────────────────────────────────────────────
       const { data: pRow } = await fetchProfile(userId)
       if (pRow) {
+        const local = load(K.profile, null)
+
         const p = {
-          name: pRow.name,
-          identity: Array.isArray(pRow.identity) ? pRow.identity : [],
-          focus: pRow.focus,
-          onboardingDone: pRow.onboarding_done,
-          createdAt: pRow.created_at,
+          name:      pRow.name     || local?.name     || '',
+          identity:  Array.isArray(pRow.identity) && pRow.identity.length
+                       ? pRow.identity
+                       : (local?.identity || []),
+          focus:     pRow.focus    || local?.focus    || '',
+          createdAt: pRow.created_at || local?.createdAt,
+
+          // ── BUG FIX: never downgrade onboardingDone from true → false/null ──
+          // Root cause: Supabase can return a row where onboarding_done IS NULL
+          // (missing column in old V3 schema, or schema mismatch). Without this
+          // guard the hydration would overwrite a valid localStorage
+          // onboardingDone:true with null, causing RequireProfile to redirect
+          // back to /onboarding on every reload.
+          //
+          // Rule: if EITHER source says "done", trust it.
+          onboardingDone: !!pRow.onboarding_done || !!local?.onboardingDone,
         }
-        save(K.profile, p); setProfileRaw(p)
+        save(K.profile, p)
+        setProfileRaw(p)
       }
 
-      // Recent sessions
+      // ── Recent sessions ────────────────────────────────────────────────
       const { data: sRows } = await fetchRecentSessions(userId, 20)
       if (sRows?.length) {
         const mapped = sRows.map(rowToSession)
@@ -76,21 +94,24 @@ export function AppProvider({ children }) {
         })
       }
 
-      // Coach
+      // ── Coach ──────────────────────────────────────────────────────────
       const { data: mRows } = await fetchCoachMessages(userId)
       if (mRows?.length) {
         const msgs = mRows.map(rowToCoachMsg)
         save(K.coach, msgs); setCoachRaw(msgs)
       }
 
-      // Reviews
+      // ── Reviews ────────────────────────────────────────────────────────
       const { data: rRows } = await fetchReviews(userId)
       if (rRows?.length) {
         const rv = rRows.map(rowToReview)
         save(K.reviews, rv); setReviewsRaw(rv)
       }
     }
-    hydrate().catch(() => {})
+
+    hydrate()
+      .catch(() => {})
+      .finally(() => setHydrating(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Computed ──────────────────────────────────────────────────────────────
@@ -181,6 +202,7 @@ export function AppProvider({ children }) {
       notifTimes, setNotifTimes,
       streak,
       resetAll,
+      hydrating,
     }}>
       {children}
     </AppContext.Provider>

@@ -9,7 +9,31 @@ import Review from './pages/Review.jsx'
 import Settings from './pages/Settings.jsx'
 
 function RequireProfile({ children }) {
-  const { profile } = useApp()
+  const { profile, hydrating } = useApp()
+
+  // While Supabase hydration is in progress (only on first load / new device
+  // when localStorage is empty), show a neutral loading screen rather than
+  // flashing the onboarding form and then redirecting away.
+  if (hydrating) {
+    return (
+      <div style={{
+        minHeight: '100dvh', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', background: 'var(--bg)',
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 11, background: 'var(--accent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 16px',
+          }}>
+            <span style={{ color: '#fff', fontSize: 12, fontWeight: 800, letterSpacing: '-0.5px' }}>DG</span>
+          </div>
+          <p style={{ fontSize: 14, color: 'var(--text-3)' }}>Se încarcă...</p>
+        </div>
+      </div>
+    )
+  }
+
   if (!profile?.onboardingDone) return <Navigate to="/onboarding" replace />
   return children
 }
