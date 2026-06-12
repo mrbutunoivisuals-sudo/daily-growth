@@ -49,11 +49,24 @@ export function AppProvider({ children }) {
   // ── Hydrate from Supabase on mount ────────────────────────────────────────
   useEffect(() => {
     async function hydrate() {
-      // ── Profile ──────────────────────────────────────────────────────────
-      const { data: pRow } = await fetchProfile(userId)
-      if (pRow) {
-        const local = load(K.profile, null)
+      const local = load(K.profile, null)
 
+      console.group('[DG] hydrate() start')
+      console.log('userId (from localStorage dg_user_id):', userId)
+      console.log('localStorage dg_user_id raw:', localStorage.getItem('dg_user_id'))
+      console.log('localStorage dg_v4_profile raw:', localStorage.getItem(K.profile))
+      console.log('local profile parsed:', local)
+      console.groupEnd()
+
+      // ── Profile ──────────────────────────────────────────────────────────
+      const { data: pRow, error: pErr } = await fetchProfile(userId)
+
+      console.group('[DG] fetchProfile result')
+      console.log('pRow:', pRow)
+      console.log('pErr:', pErr)
+      console.groupEnd()
+
+      if (pRow) {
         const p = {
           name:      pRow.name     || local?.name     || '',
           identity:  Array.isArray(pRow.identity) && pRow.identity.length
@@ -61,19 +74,13 @@ export function AppProvider({ children }) {
                        : (local?.identity || []),
           focus:     pRow.focus    || local?.focus    || '',
           createdAt: pRow.created_at || local?.createdAt,
-
-          // ── BUG FIX: never downgrade onboardingDone from true → false/null ──
-          // Root cause: Supabase can return a row where onboarding_done IS NULL
-          // (missing column in old V3 schema, or schema mismatch). Without this
-          // guard the hydration would overwrite a valid localStorage
-          // onboardingDone:true with null, causing RequireProfile to redirect
-          // back to /onboarding on every reload.
-          //
-          // Rule: if EITHER source says "done", trust it.
           onboardingDone: !!pRow.onboarding_done || !!local?.onboardingDone,
         }
+        console.log('[DG] merged profile written:', p)
         save(K.profile, p)
         setProfileRaw(p)
+      } else {
+        console.log('[DG] no Supabase row found — keeping localStorage:', local)
       }
 
       // ── Recent sessions ────────────────────────────────────────────────
@@ -110,7 +117,7 @@ export function AppProvider({ children }) {
     }
 
     hydrate()
-      .catch(() => {})
+      .catch((e) => console.error('[DG] hydrate() threw:', e))
       .finally(() => setHydrating(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
